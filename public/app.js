@@ -43,7 +43,12 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
 
-seedDemo();
+initialize();
+
+async function initialize() {
+  seedDemo();
+  await setDemoPosition("Demo er aktiv. Trykk Bruk min posisjon for nøyaktig liste.");
+}
 
 async function locate() {
   setLoading("Henter posisjon");
@@ -78,25 +83,32 @@ async function refresh() {
     return;
   }
 
-  setLoading("Oppdaterer");
-  const query = new URLSearchParams({
-    lat: String(state.position.lat),
-    lon: String(state.position.lon),
-    travelMode: state.travelMode
-  });
-  appendDestinationParams(query);
+  try {
+    setLoading("Oppdaterer");
+    const query = new URLSearchParams({
+      lat: String(state.position.lat),
+      lon: String(state.position.lon),
+      travelMode: state.travelMode
+    });
+    appendDestinationParams(query);
 
-  const nearby = await fetchJson(`/api/ferries/nearby?${query}`);
-  state.routes = nearby.routes || [];
-  elements.sourceLabel.textContent = `${nearby.source === "entur-authoritative" ? "Entur" : "Fallback"} · ${APP_VERSION}`;
+    const nearby = await fetchJson(`/api/ferries/nearby?${query}`);
+    state.routes = nearby.routes || [];
+    elements.sourceLabel.textContent = `${nearby.source === "entur-authoritative" ? "Entur" : "Fallback"} · ${APP_VERSION}`;
 
-  if ((!state.selectedTerminalId || !state.routes.some((route) => route.id === state.selectedTerminalId)) && state.routes[0]) {
-    state.selectedTerminalId = state.routes[0].id;
+    if ((!state.selectedTerminalId || !state.routes.some((route) => route.id === state.selectedTerminalId)) && state.routes[0]) {
+      state.selectedTerminalId = state.routes[0].id;
+    }
+
+    renderRoutes();
+    await updateDecision();
+    await updateAlerts();
+  } catch (error) {
+    state.routes = [];
+    renderRoutes(error.message);
+    elements.statusPill.textContent = "Kunne ikke hente ruter";
+    elements.statusPill.className = "status-pill low";
   }
-
-  renderRoutes();
-  await updateDecision();
-  await updateAlerts();
 }
 
 async function updateDecision() {
@@ -138,12 +150,12 @@ async function updateAlerts() {
   renderAlerts(payload.alerts || []);
 }
 
-function renderRoutes() {
+function renderRoutes(errorMessage = "") {
   elements.routeList.innerHTML = "";
   if (!state.routes.length) {
     const empty = document.createElement("div");
     empty.className = "empty-routes";
-    empty.textContent = "Ingen aktuelle fergestrekninger for valgt destinasjon.";
+    empty.textContent = errorMessage || "Ingen aktuelle fergestrekninger for valgt destinasjon og reisemåte.";
     elements.routeList.append(empty);
     return;
   }

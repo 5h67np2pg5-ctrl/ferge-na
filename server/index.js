@@ -559,7 +559,8 @@ async function getNearby(req, res, url) {
 
   for (const terminal of sourceRoutes) {
     const departureDistanceKm = distanceKm(origin, terminal);
-    const arrivalDistanceKm = destination ? distanceFromArrivalSideToDestination(terminal, destination) : null;
+    const arrivalMetrics = destination ? bestArrivalSideMetrics(origin, destination, terminal) : null;
+    const arrivalDistanceKm = arrivalMetrics?.distanceKm ?? null;
     const departureToDestinationKm = destination ? distanceKm(terminal, destination) : null;
     const destinationGainKm =
       destination && Number.isFinite(arrivalDistanceKm) && Number.isFinite(departureToDestinationKm)
@@ -570,11 +571,23 @@ async function getNearby(req, res, url) {
       continue;
     }
 
+    if (destination && !passesRouteProgression(origin, destination, terminal, arrivalMetrics)) {
+      continue;
+    }
+
     const maxRelevantDepartureKm = destination
       ? Math.max(15, originToDestinationKm * 1.25)
       : Infinity;
     if (destination && departureDistanceKm > maxRelevantDepartureKm) {
       continue;
+    }
+
+    if (destination && Number.isFinite(originToDestinationKm) && Number.isFinite(arrivalDistanceKm)) {
+      const viaFerryKm = departureDistanceKm + arrivalDistanceKm;
+      const maxCorridorKm = Math.max(20, originToDestinationKm * 1.08);
+      if (viaFerryKm > maxCorridorKm) {
+        continue;
+      }
     }
 
     const candidate = {
@@ -608,11 +621,45 @@ async function getNearby(req, res, url) {
   });
 }
 
-function distanceFromArrivalSideToDestination(terminal, destination) {
+function bestArrivalSideMetrics(origin, destination, terminal) {
   if (!Array.isArray(terminal.lineQuays)) return null;
   const otherQuays = terminal.lineQuays.filter((quay) => quay.id !== terminal.id);
   if (!otherQuays.length) return null;
-  return Math.min(...otherQuays.map((quay) => distanceKm(destination, quay)));
+  return otherQuays
+    .map((quay) => ({
+      quay,
+      distanceKm: distanceKm(destination, quay),
+      progress: routeProgress(origin, destination, quay)
+    }))
+    .sort((a, b) => a.distanceKm - b.distanceKm)[0];
+}
+
+function passesRouteProgression(origin, destination, departure, arrivalMetrics) {
+  if (!arrivalMetrics) return false;
+  const originToDestinationKm = distanceKm(origin, destination);
+  const departureProgress = routeProgress(origin, destination, departure);
+  const arrivalProgress = arrivalMetrics.progress;
+  const minProgressDelta = originToDestinationKm < 25 ? 0.05 : 0.035;
+
+  if (departureProgress < -0.05 || departureProgress > 1.05) return false;
+  return arrivalProgress - departureProgress >= minProgressDelta;
+}
+
+function routeProgress(origin, destination, point) {
+  const lat0 = toRad((origin.lat + destination.lat) / 2);
+  const ox = origin.lon * Math.cos(lat0);
+  const oy = origin.lat;
+  const dx = destination.lon * Math.cos(lat0);
+  const dy = destination.lat;
+  const px = point.lon * Math.cos(lat0);
+  const py = point.lat;
+  const vx = dx - ox;
+  const vy = dy - oy;
+  const wx = px - ox;
+  const wy = py - oy;
+  const lengthSquared = vx * vx + vy * vy;
+  if (!lengthSquared) return 0;
+  return (wx * vx + wy * vy) / lengthSquared;
 }
 
 async function getDecision(req, res, url) {
