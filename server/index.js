@@ -605,9 +605,21 @@ async function getNearby(req, res, url) {
     }
   }
 
-  const nearby = [...byRoute.values()]
+  let nearby = [...byRoute.values()]
     .sort((a, b) => a.relevanceScore - b.relevanceScore)
     .slice(0, Number(url.searchParams.get("limit") || 10));
+
+  if (!nearby.length && !destination) {
+    nearby = getCuratedFallbackRoutes()
+      .filter((route) => routeSupportsTravelMode(route, travelMode))
+      .map((terminal) => ({
+        ...terminal,
+        distanceKm: Math.round(distanceKm(origin, terminal) * 10) / 10,
+        relevanceScore: distanceKm(origin, terminal)
+      }))
+      .sort((a, b) => a.relevanceScore - b.relevanceScore)
+      .slice(0, Number(url.searchParams.get("limit") || 10));
+  }
 
   sendJson(res, 200, {
     source: entur.routes.length ? "entur-authoritative" : "curated-fallback",

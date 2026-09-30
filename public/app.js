@@ -7,7 +7,7 @@ const state = {
   routes: []
 };
 
-const APP_VERSION = "v13";
+const APP_VERSION = "v14";
 
 const elements = {
   locateButton: document.querySelector("#locateButton"),
@@ -113,16 +113,43 @@ async function refresh() {
     renderRoutes();
     if (!state.routes.length) {
       clearDecision();
-      await updateAlerts();
+      await updateAlertsSafe();
       return;
     }
-    await updateDecision();
-    await updateAlerts();
+    await updateDecisionSafe();
+    await updateAlertsSafe();
   } catch (error) {
     state.routes = [];
     renderRoutes(error.message);
     elements.statusPill.textContent = "Kunne ikke hente ruter";
     elements.statusPill.className = "status-pill low";
+  }
+}
+
+async function updateDecisionSafe() {
+  try {
+    await updateDecision();
+  } catch (error) {
+    elements.statusPill.textContent = "Ruter hentet";
+    elements.statusPill.className = "status-pill medium";
+    elements.routeName.textContent = state.routes[0]
+      ? `${state.routes[0].sideName} ferjekai`
+      : "Ingen aktuell avgangskai";
+    elements.recommendation.textContent = "Kunne ikke hente neste avgang akkurat nå, men sambandslisten er oppdatert.";
+    elements.departureTime.textContent = "--:--";
+    elements.margin.textContent = "--";
+    elements.driveTime.textContent = "--";
+    elements.queueTime.textContent = "--";
+    elements.bufferTime.textContent = "--";
+    elements.crossingTime.textContent = "--";
+  }
+}
+
+async function updateAlertsSafe() {
+  try {
+    await updateAlerts();
+  } catch {
+    renderAlerts([]);
   }
 }
 
