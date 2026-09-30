@@ -14,6 +14,7 @@ const elements = {
   notifyButton: document.querySelector("#notifyButton"),
   refreshButton: document.querySelector("#refreshButton"),
   modeButtons: [...document.querySelectorAll(".mode-button")],
+  modeSummary: document.querySelector("#modeSummary"),
   statusPill: document.querySelector("#statusPill"),
   updatedAt: document.querySelector("#updatedAt"),
   departureTime: document.querySelector("#departureTime"),
@@ -28,6 +29,7 @@ const elements = {
   destinationSuggestions: document.querySelector("#destinationSuggestions"),
   noticeStack: document.querySelector("#noticeStack"),
   routeList: document.querySelector("#routeList"),
+  routeListTitle: document.querySelector("#routeListTitle"),
   sourceLabel: document.querySelector("#sourceLabel")
 };
 
@@ -46,6 +48,7 @@ initialize();
 
 async function initialize() {
   seedDemo();
+  renderTravelMode();
   await setDemoPosition("Demo er aktiv. Trykk Bruk min posisjon for nøyaktig liste.");
 }
 
@@ -93,15 +96,15 @@ async function refresh() {
 
   try {
     setLoading("Oppdaterer");
-    const query = new URLSearchParams({
-      lat: String(state.position.lat),
-      lon: String(state.position.lon),
-      travelMode: state.travelMode
-    });
-    appendDestinationParams(query);
+    let nearby = await fetchNearbyRoutes(true);
+    let destinationFiltered = Boolean(state.destination);
+    if (destinationFiltered && !(nearby.routes || []).length) {
+      nearby = await fetchNearbyRoutes(false);
+      destinationFiltered = false;
+    }
 
-    const nearby = await fetchJson(`/api/ferries/nearby?${query}`);
     state.routes = nearby.routes || [];
+    elements.routeListTitle.textContent = destinationFiltered ? "Aktuelle samband" : "Nærmeste samband";
     elements.sourceLabel.textContent = `${nearby.source === "entur-authoritative" ? "Entur" : "Fallback"} · ${APP_VERSION}`;
 
     if ((!state.selectedTerminalId || !state.routes.some((route) => route.id === state.selectedTerminalId)) && state.routes[0]) {
@@ -167,6 +170,16 @@ async function updateDecision() {
   maybeNotify(decision);
 }
 
+async function fetchNearbyRoutes(useDestination) {
+  const query = new URLSearchParams({
+    lat: String(state.position.lat),
+    lon: String(state.position.lon),
+    travelMode: state.travelMode
+  });
+  if (useDestination) appendDestinationParams(query);
+  return fetchJson(`/api/ferries/nearby?${query}`);
+}
+
 async function updateAlerts() {
   const query = new URLSearchParams({
     lat: String(state.position.lat),
@@ -181,7 +194,7 @@ function renderRoutes(errorMessage = "") {
   if (!state.routes.length) {
     const empty = document.createElement("div");
     empty.className = "empty-routes";
-    empty.textContent = errorMessage || "Ingen aktuelle fergestrekninger for valgt destinasjon og reisemåte.";
+    empty.textContent = errorMessage || "Ingen fergestrekninger funnet for posisjon og reisemåte.";
     elements.routeList.append(empty);
     return;
   }
@@ -228,6 +241,9 @@ function renderTravelMode() {
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", active ? "true" : "false");
   }
+  elements.modeSummary.textContent = state.travelMode === "vehicle"
+    ? "Valgt: kjøretøy"
+    : "Valgt: uten kjøretøy";
 }
 
 function handleDestinationInput() {

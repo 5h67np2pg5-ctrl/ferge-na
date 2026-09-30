@@ -27,6 +27,7 @@
       <section class="travel-mode" aria-label="Reisemåte">
         <button class="mode-button active" id="vehicleModeButton" type="button" data-mode="vehicle">Jeg er i kjøretøy</button>
         <button class="mode-button" id="footModeButton" type="button" data-mode="foot">Jeg er uten kjøretøy</button>
+        <p class="mode-summary" id="modeSummary">Valgt: kjøretøy</p>
       </section>
 
       <section class="destination-panel" aria-label="Endelig destinasjon">
@@ -77,7 +78,7 @@
 
       <section class="list-section">
         <div class="section-heading">
-          <h2>Nærmeste samband</h2>
+          <h2 id="routeListTitle">Nærmeste samband</h2>
           <span id="sourceLabel">Demo</span>
         </div>
         <div class="route-list" id="routeList"></div>
