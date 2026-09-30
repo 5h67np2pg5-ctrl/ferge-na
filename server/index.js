@@ -255,7 +255,7 @@ async function enturGraphql(query, variables = {}) {
   return data.data;
 }
 
-async function getEnturCarFerryRoutes({ force = false } = {}) {
+async function getEnturWaterRoutes({ force = false } = {}) {
   const now = Date.now();
   if (!force && enturFerryCache.routes.length && now - enturFerryCache.fetchedAt < ENTUR_FERRY_CACHE_TTL_MS) {
     return enturFerryCache;
@@ -291,7 +291,7 @@ async function getEnturCarFerryRoutes({ force = false } = {}) {
   try {
     const data = await enturGraphql(query);
     const routes = (data.lines || [])
-      .filter((line) => line.transportSubmode === "localCarFerry")
+      .filter((line) => isRelevantWaterLine(line.transportSubmode))
       .flatMap((line) => normalizeEnturLine(line));
 
     enturFerryCache = { fetchedAt: now, routes, error: null };
@@ -303,6 +303,23 @@ async function getEnturCarFerryRoutes({ force = false } = {}) {
     };
     return enturFerryCache;
   }
+}
+
+function isRelevantWaterLine(submode) {
+  return [
+    "localCarFerry",
+    "localPassengerFerry",
+    "highSpeedPassengerService"
+  ].includes(submode);
+}
+
+function routeSupportsTravelMode(route, travelMode) {
+  if (travelMode === "vehicle") return route.transportSubmode === "localCarFerry";
+  return ["localCarFerry", "localPassengerFerry", "highSpeedPassengerService"].includes(route.transportSubmode);
+}
+
+function parseTravelMode(searchParams) {
+  return searchParams.get("travelMode") === "foot" ? "foot" : "vehicle";
 }
 
 function normalizeEnturLine(line) {
@@ -532,9 +549,11 @@ async function getNearby(req, res, url) {
   const origin = parseLatLon(url.searchParams);
   if (!origin) return badRequest(res, "Mangler gyldig lat/lon.");
   const destination = parseOptionalDestination(url.searchParams);
+  const travelMode = parseTravelMode(url.searchParams);
 
-  const entur = await getEnturCarFerryRoutes();
-  const sourceRoutes = entur.routes.length ? entur.routes : getCuratedFallbackRoutes();
+  const entur = await getEnturWaterRoutes();
+  const sourceRoutes = (entur.routes.length ? entur.routes : getCuratedFallbackRoutes())
+    .filter((route) => routeSupportsTravelMode(route, travelMode));
   const byRoute = new Map();
   const originToDestinationKm = destination ? distanceKm(origin, destination) : null;
 
@@ -584,6 +603,7 @@ async function getNearby(req, res, url) {
       fetchedAt: entur.fetchedAt ? new Date(entur.fetchedAt).toISOString() : null,
       error: entur.error
     },
+    travelMode,
     routes: nearby
   });
 }
@@ -600,8 +620,10 @@ async function getDecision(req, res, url) {
   if (!origin) return badRequest(res, "Mangler gyldig lat/lon.");
 
   const terminalId = url.searchParams.get("terminalId");
-  const entur = await getEnturCarFerryRoutes();
-  const sourceRoutes = entur.routes.length ? entur.routes : getCuratedFallbackRoutes();
+  const travelMode = parseTravelMode(url.searchParams);
+  const entur = await getEnturWaterRoutes();
+  const sourceRoutes = (entur.routes.length ? entur.routes : getCuratedFallbackRoutes())
+    .filter((route) => routeSupportsTravelMode(route, travelMode));
   const selected =
     sourceRoutes.find((terminal) => terminal.id === terminalId) ||
     sourceRoutes
@@ -637,7 +659,11 @@ async function getDecision(req, res, url) {
 }
 
 function getCuratedFallbackRoutes() {
-  return terminals.map((terminal) => ({ ...terminal, source: "curated-fallback" }));
+  return terminals.map((terminal) => ({
+    ...terminal,
+    source: "curated-fallback",
+    transportSubmode: "localCarFerry"
+  }));
 }
 
 async function getAlerts(_req, res, url) {

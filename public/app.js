@@ -1,6 +1,7 @@
 const state = {
   position: null,
   selectedTerminalId: null,
+  travelMode: "vehicle",
   destination: null,
   destinationSearchTimer: null,
   routes: []
@@ -10,6 +11,7 @@ const elements = {
   locateButton: document.querySelector("#locateButton"),
   notifyButton: document.querySelector("#notifyButton"),
   refreshButton: document.querySelector("#refreshButton"),
+  modeButtons: [...document.querySelectorAll(".mode-button")],
   statusPill: document.querySelector("#statusPill"),
   updatedAt: document.querySelector("#updatedAt"),
   departureTime: document.querySelector("#departureTime"),
@@ -30,6 +32,7 @@ const elements = {
 elements.locateButton.addEventListener("click", locate);
 elements.notifyButton.addEventListener("click", enableNotifications);
 elements.refreshButton.addEventListener("click", refresh);
+elements.modeButtons.forEach((button) => button.addEventListener("click", () => setTravelMode(button.dataset.mode)));
 elements.destinationInput.addEventListener("input", handleDestinationInput);
 elements.destinationInput.addEventListener("focus", handleDestinationInput);
 document.addEventListener("pointerdown", closeSuggestionsOnOutsideClick);
@@ -76,7 +79,8 @@ async function refresh() {
   setLoading("Oppdaterer");
   const query = new URLSearchParams({
     lat: String(state.position.lat),
-    lon: String(state.position.lon)
+    lon: String(state.position.lon),
+    travelMode: state.travelMode
   });
   appendDestinationParams(query);
 
@@ -97,7 +101,8 @@ async function updateDecision() {
   const query = new URLSearchParams({
     lat: String(state.position.lat),
     lon: String(state.position.lon),
-    terminalId: state.selectedTerminalId || ""
+    terminalId: state.selectedTerminalId || "",
+    travelMode: state.travelMode
   });
 
   const payload = await fetchJson(`/api/decision?${query}`);
@@ -163,7 +168,22 @@ function renderRoutes() {
 }
 
 function formatRouteDescriptor(route) {
-  return route.routeCode ? `Samband ${route.routeCode}` : "Fergesamband";
+  const type = route.transportSubmode === "localCarFerry" ? "bilferge" : "hurtigbåt";
+  return route.routeCode ? `${type} ${route.routeCode}` : type;
+}
+
+async function setTravelMode(mode) {
+  if (!["vehicle", "foot"].includes(mode) || state.travelMode === mode) return;
+  state.travelMode = mode;
+  state.selectedTerminalId = null;
+  renderTravelMode();
+  if (state.position) await refresh();
+}
+
+function renderTravelMode() {
+  for (const button of elements.modeButtons) {
+    button.classList.toggle("active", button.dataset.mode === state.travelMode);
+  }
 }
 
 function handleDestinationInput() {

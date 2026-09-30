@@ -93,6 +93,31 @@ h1 {
   margin-top: 4px;
 }
 
+.travel-mode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.mode-button {
+  min-height: 46px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.mode-button.active {
+  background: var(--brand);
+  color: #fff;
+}
+
 .destination-panel {
   position: relative;
   margin-top: 10px;

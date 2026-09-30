@@ -1,4 +1,4 @@
-const CACHE_NAME = "ferge-na-v7";
+const CACHE_NAME = "ferge-na-v8";
 const ASSETS = ["/", "/styles.css", "/app.js", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", (event) => {
