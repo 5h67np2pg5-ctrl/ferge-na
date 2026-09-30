@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="no">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0f3d3e" />
+    <title>Ferge NÅ</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="topbar" aria-label="Status">
+        <div>
+          <p class="eyebrow">Ferge NÅ</p>
+          <h1>Hva rekker du?</h1>
+        </div>
+        <button class="icon-button" id="refreshButton" type="button" aria-label="Oppdater">↻</button>
+      </section>
+
+      <section class="hero-panel" aria-live="polite">
+        <div class="status-row">
+          <span class="status-pill" id="statusPill">Venter på posisjon</span>
+          <span id="updatedAt">--:--</span>
+        </div>
+        <div class="decision-grid">
+          <div>
+            <span class="label">Neste ferge</span>
+            <strong id="departureTime">--:--</strong>
+          </div>
+          <div>
+            <span class="label">Margin</span>
+            <strong id="margin">-- min</strong>
+          </div>
+        </div>
+        <h2 id="routeName">Finn nærmeste fergesamband</h2>
+        <p id="recommendation">Del posisjon for å se aktuell avreiseside, kjøretid, købuffer og om du rekker avgangen.</p>
+        <div class="action-row">
+          <button class="primary-action" id="locateButton" type="button">Bruk min posisjon</button>
+          <button class="secondary-action" id="notifyButton" type="button">Varsler</button>
+        </div>
+      </section>
+
+      <section class="metrics" aria-label="Reisetid">
+        <article>
+          <span>Kjøretid</span>
+          <strong id="driveTime">--</strong>
+        </article>
+        <article>
+          <span>Kø ved kai</span>
+          <strong id="queueTime">--</strong>
+        </article>
+        <article>
+          <span>Buffer</span>
+          <strong id="bufferTime">--</strong>
+        </article>
+      </section>
+
+      <section class="notice-stack" id="noticeStack" aria-label="Varsler"></section>
+
+      <section class="list-section">
+        <div class="section-heading">
+          <h2>Nærmeste samband</h2>
+          <span id="sourceLabel">Demo</span>
+        </div>
+        <div class="route-list" id="routeList"></div>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

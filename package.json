@@ -1,0 +1,14 @@
+{
+  "name": "ferge-na",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Ferge NÅ - one-screen ferry reachability app for Norway.",
+  "type": "module",
+  "scripts": {
+    "dev": "node server/index.js",
+    "start": "node server/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

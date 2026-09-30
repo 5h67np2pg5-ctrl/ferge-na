@@ -1,0 +1,15 @@
+{
+  "name": "Ferge NÅ",
+  "short_name": "Ferge NÅ",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7faf8",
+  "theme_color": "#0f3d3e",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
