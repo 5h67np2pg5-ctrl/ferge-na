@@ -26,5 +26,3 @@ PORT=3000
 - Google Routes: live kjøretid og køestimat inn mot fergeleie.
 - Statens vegvesen DATEX: trafikkmeldinger, føre, vær og hendelser.
 - NOBIL: ladestasjoner.
-
-Kontrollvarsling/politikontroller er bevisst utelatt.

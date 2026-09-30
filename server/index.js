@@ -730,12 +730,6 @@ async function getAlerts(_req, res, url) {
       level: "info",
       title: `${nearbyChargerCount} ladestasjoner langs aktuell rute`,
       detail: "NOBIL API kobles inn for effekt, kontakt og tilgjengelighet."
-    },
-    {
-      id: "control-policy",
-      level: "muted",
-      title: "Kontrollvarsling er ikke inkludert",
-      detail: "Appen varsler om sikkerhet, føre, kø og avvik, ikke geolokasjon for trafikkontroller."
     }
   ];
 
