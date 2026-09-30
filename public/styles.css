@@ -98,10 +98,10 @@ h1 {
 .travel-mode {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px;
+  gap: 8px;
   margin-top: 8px;
-  padding: 4px;
-  border: 1px solid var(--line);
+  padding: 8px;
+  border: 2px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
 }
@@ -115,17 +115,19 @@ h1 {
 }
 
 .mode-button {
-  min-height: 46px;
-  border: 0;
+  min-height: 52px;
+  border: 2px solid var(--line);
   border-radius: 6px;
-  background: transparent;
+  background: #fbfdfc;
   color: var(--muted);
   font-weight: 900;
 }
 
 .mode-button.active {
+  border-color: var(--brand);
   background: var(--brand);
   color: #fff;
+  box-shadow: 0 0 0 3px rgba(15, 61, 62, 0.14);
 }
 
 .mode-button:focus-visible,

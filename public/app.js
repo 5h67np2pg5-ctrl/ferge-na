@@ -7,11 +7,10 @@ const state = {
   routes: []
 };
 
-const APP_VERSION = "v12";
+const APP_VERSION = "v13";
 
 const elements = {
   locateButton: document.querySelector("#locateButton"),
-  notifyButton: document.querySelector("#notifyButton"),
   refreshButton: document.querySelector("#refreshButton"),
   modeButtons: [...document.querySelectorAll(".mode-button")],
   modeSummary: document.querySelector("#modeSummary"),
@@ -34,7 +33,6 @@ const elements = {
 };
 
 elements.locateButton.addEventListener("click", locate);
-elements.notifyButton.addEventListener("click", enableNotifications);
 elements.refreshButton.addEventListener("click", refresh);
 elements.modeButtons.forEach((button) => button.addEventListener("click", () => setTravelMode(button.dataset.mode)));
 elements.destinationInput.addEventListener("input", handleDestinationInput);
@@ -96,6 +94,7 @@ async function refresh() {
 
   try {
     setLoading("Oppdaterer");
+    renderRouteLoading();
     let nearby = await fetchNearbyRoutes(true);
     let destinationFiltered = Boolean(state.destination);
     if (destinationFiltered && !(nearby.routes || []).length) {
@@ -104,7 +103,7 @@ async function refresh() {
     }
 
     state.routes = nearby.routes || [];
-    elements.routeListTitle.textContent = destinationFiltered ? "Aktuelle samband" : "Nærmeste samband";
+    elements.routeListTitle.textContent = destinationFiltered ? "Aktuelle samband" : "5 nærmeste samband";
     elements.sourceLabel.textContent = `${nearby.source === "entur-authoritative" ? "Entur" : "Fallback"} · ${APP_VERSION}`;
 
     if ((!state.selectedTerminalId || !state.routes.some((route) => route.id === state.selectedTerminalId)) && state.routes[0]) {
@@ -174,7 +173,8 @@ async function fetchNearbyRoutes(useDestination) {
   const query = new URLSearchParams({
     lat: String(state.position.lat),
     lon: String(state.position.lon),
-    travelMode: state.travelMode
+    travelMode: state.travelMode,
+    limit: "5"
   });
   if (useDestination) appendDestinationParams(query);
   return fetchJson(`/api/ferries/nearby?${query}`);
@@ -221,6 +221,15 @@ function renderRoutes(errorMessage = "") {
   }
 }
 
+function renderRouteLoading() {
+  elements.routeListTitle.textContent = "5 nærmeste samband";
+  elements.routeList.innerHTML = "";
+  const loading = document.createElement("div");
+  loading.className = "empty-routes";
+  loading.textContent = "Henter fergestrekninger...";
+  elements.routeList.append(loading);
+}
+
 function formatRouteDescriptor(route) {
   const type = route.transportSubmode === "localCarFerry" ? "bilferge" : "hurtigbåt";
   return route.routeCode ? `${type} ${route.routeCode}` : type;
@@ -240,6 +249,11 @@ function renderTravelMode() {
     const active = button.dataset.mode === state.travelMode;
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", active ? "true" : "false");
+    button.textContent = active
+      ? `✓ ${button.dataset.mode === "vehicle" ? "Kjøretøy" : "Uten kjøretøy"}`
+      : button.dataset.mode === "vehicle"
+        ? "Kjøretøy"
+        : "Uten kjøretøy";
   }
   elements.modeSummary.textContent = state.travelMode === "vehicle"
     ? "Valgt: kjøretøy"
@@ -344,30 +358,6 @@ function seedDemo() {
     minute: "2-digit"
   });
   renderAlerts([]);
-}
-
-async function enableNotifications() {
-  if (!("Notification" in window)) {
-    renderAlerts([
-      {
-        level: "warning",
-        title: "Varsler støttes ikke",
-        detail: "Denne nettleseren kan ikke vise PWA-varsler."
-      }
-    ]);
-    return;
-  }
-
-  const permission = await Notification.requestPermission();
-  elements.notifyButton.textContent = permission === "granted" ? "Varsler på" : "Varsler av";
-  elements.notifyButton.classList.toggle("active", permission === "granted");
-
-  if (permission === "granted") {
-    new Notification("Ferge NÅ", {
-      body: "Du får varsel når margin, kø eller avgang endrer seg.",
-      icon: "/icon.svg"
-    });
-  }
 }
 
 async function disableServiceWorkerCache() {
