@@ -7,6 +7,8 @@ const state = {
   routes: []
 };
 
+const APP_VERSION = "v9";
+
 const elements = {
   locateButton: document.querySelector("#locateButton"),
   notifyButton: document.querySelector("#notifyButton"),
@@ -86,7 +88,7 @@ async function refresh() {
 
   const nearby = await fetchJson(`/api/ferries/nearby?${query}`);
   state.routes = nearby.routes || [];
-  elements.sourceLabel.textContent = nearby.source === "entur-authoritative" ? "Entur" : "Fallback";
+  elements.sourceLabel.textContent = `${nearby.source === "entur-authoritative" ? "Entur" : "Fallback"} · ${APP_VERSION}`;
 
   if ((!state.selectedTerminalId || !state.routes.some((route) => route.id === state.selectedTerminalId)) && state.routes[0]) {
     state.selectedTerminalId = state.routes[0].id;

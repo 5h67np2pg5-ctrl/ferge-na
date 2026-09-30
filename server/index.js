@@ -743,7 +743,7 @@ async function serveStatic(res, pathname) {
   const ext = extname(filePath);
   res.writeHead(200, {
     "content-type": contentTypes[ext] || "application/octet-stream",
-    "cache-control": ext === ".html" ? "no-store" : "public, max-age=3600"
+    "cache-control": [".html", ".js", ".css", ".webmanifest"].includes(ext) ? "no-store" : "public, max-age=3600"
   });
   res.end(body);
 }
