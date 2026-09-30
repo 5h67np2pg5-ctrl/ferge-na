@@ -7,7 +7,7 @@ const state = {
   routes: []
 };
 
-const APP_VERSION = "v9";
+const APP_VERSION = "v10";
 
 const elements = {
   locateButton: document.querySelector("#locateButton"),
@@ -39,9 +39,7 @@ elements.destinationInput.addEventListener("input", handleDestinationInput);
 elements.destinationInput.addEventListener("focus", handleDestinationInput);
 document.addEventListener("pointerdown", closeSuggestionsOnOutsideClick);
 
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js").catch(() => {});
-}
+disableServiceWorkerCache();
 
 initialize();
 
@@ -52,9 +50,12 @@ async function initialize() {
 
 async function locate() {
   setLoading("Henter posisjon");
+  elements.locateButton.disabled = true;
+  elements.locateButton.textContent = "Henter posisjon";
 
   if (!navigator.geolocation) {
-    setDemoPosition("Nettleseren støtter ikke posisjon. Viser demo.");
+    await setDemoPosition("Nettleseren støtter ikke posisjon. Viser demo.");
+    elements.locateButton.disabled = false;
     return;
   }
 
@@ -64,9 +65,15 @@ async function locate() {
         lat: position.coords.latitude,
         lon: position.coords.longitude
       };
+      elements.locateButton.textContent = "Posisjon aktiv";
+      elements.locateButton.disabled = false;
       await refresh();
     },
-    () => setDemoPosition("Fikk ikke posisjon. Viser demo ved Halhjem."),
+    async () => {
+      await setDemoPosition("Fikk ikke posisjon. Viser demo ved Halhjem.");
+      elements.locateButton.textContent = "Bruk min posisjon";
+      elements.locateButton.disabled = false;
+    },
     { enableHighAccuracy: true, timeout: 8000, maximumAge: 15000 }
   );
 }
@@ -101,6 +108,11 @@ async function refresh() {
     }
 
     renderRoutes();
+    if (!state.routes.length) {
+      clearDecision();
+      await updateAlerts();
+      return;
+    }
     await updateDecision();
     await updateAlerts();
   } catch (error) {
@@ -109,6 +121,19 @@ async function refresh() {
     elements.statusPill.textContent = "Kunne ikke hente ruter";
     elements.statusPill.className = "status-pill low";
   }
+}
+
+function clearDecision() {
+  elements.statusPill.textContent = "Ingen aktuell ferge";
+  elements.statusPill.className = "status-pill low";
+  elements.departureTime.textContent = "--:--";
+  elements.margin.textContent = "--";
+  elements.routeName.textContent = "Ingen aktuell avgangskai";
+  elements.recommendation.textContent = "Endre destinasjon, reisemåte eller posisjon.";
+  elements.driveTime.textContent = "--";
+  elements.queueTime.textContent = "--";
+  elements.bufferTime.textContent = "--";
+  elements.crossingTime.textContent = "--";
 }
 
 async function updateDecision() {
@@ -191,6 +216,7 @@ async function setTravelMode(mode) {
   state.travelMode = mode;
   state.selectedTerminalId = null;
   renderTravelMode();
+  setLoading("Oppdaterer valg");
   if (state.position) await refresh();
 }
 
@@ -315,12 +341,23 @@ async function enableNotifications() {
 
   const permission = await Notification.requestPermission();
   elements.notifyButton.textContent = permission === "granted" ? "Varsler på" : "Varsler av";
+  elements.notifyButton.classList.toggle("active", permission === "granted");
 
   if (permission === "granted") {
     new Notification("Ferge NÅ", {
       body: "Du får varsel når margin, kø eller avgang endrer seg.",
       icon: "/icon.svg"
     });
+  }
+}
+
+async function disableServiceWorkerCache() {
+  if (!("serviceWorker" in navigator)) return;
+  const registrations = await navigator.serviceWorker.getRegistrations().catch(() => []);
+  await Promise.all(registrations.map((registration) => registration.unregister()));
+  if ("caches" in window) {
+    const keys = await caches.keys().catch(() => []);
+    await Promise.all(keys.map((key) => caches.delete(key)));
   }
 }
 
