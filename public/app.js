@@ -32,6 +32,7 @@ elements.notifyButton.addEventListener("click", enableNotifications);
 elements.refreshButton.addEventListener("click", refresh);
 elements.destinationInput.addEventListener("input", handleDestinationInput);
 elements.destinationInput.addEventListener("focus", handleDestinationInput);
+document.addEventListener("pointerdown", closeSuggestionsOnOutsideClick);
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js").catch(() => {});
@@ -77,12 +78,13 @@ async function refresh() {
     lat: String(state.position.lat),
     lon: String(state.position.lon)
   });
+  appendDestinationParams(query);
 
   const nearby = await fetchJson(`/api/ferries/nearby?${query}`);
   state.routes = nearby.routes || [];
   elements.sourceLabel.textContent = nearby.source === "entur-authoritative" ? "Entur" : "Fallback";
 
-  if (!state.selectedTerminalId && state.routes[0]) {
+  if ((!state.selectedTerminalId || !state.routes.some((route) => route.id === state.selectedTerminalId)) && state.routes[0]) {
     state.selectedTerminalId = state.routes[0].id;
   }
 
@@ -131,9 +133,17 @@ async function updateAlerts() {
 
 function renderRoutes() {
   elements.routeList.innerHTML = "";
+  if (!state.routes.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-routes";
+    empty.textContent = "Ingen aktuelle fergestrekninger for valgt destinasjon.";
+    elements.routeList.append(empty);
+    return;
+  }
+
   for (const route of state.routes) {
     const button = document.createElement("button");
-    button.className = "route-card";
+    button.className = route.id === state.selectedTerminalId ? "route-card active" : "route-card";
     button.type = "button";
     button.innerHTML = `
       <span>
@@ -143,7 +153,9 @@ function renderRoutes() {
       <em>Velg</em>
     `;
     button.addEventListener("click", async () => {
+      renderDestinationSuggestions([]);
       state.selectedTerminalId = route.id;
+      renderRoutes();
       await updateDecision();
     });
     elements.routeList.append(button);
@@ -159,7 +171,10 @@ function handleDestinationInput() {
   window.clearTimeout(state.destinationSearchTimer);
 
   if (text.length < 2) {
+    state.destination = null;
+    state.selectedTerminalId = null;
     renderDestinationSuggestions([]);
+    if (state.position) refresh();
     return;
   }
 
@@ -167,7 +182,13 @@ function handleDestinationInput() {
     const query = new URLSearchParams({ text });
     try {
       const payload = await fetchJson(`/api/places?${query}`);
-      renderDestinationSuggestions(payload.places || []);
+      const places = payload.places || [];
+      renderDestinationSuggestions(places);
+      if (places[0] && state.destination?.id !== places[0].id) {
+        state.destination = places[0];
+        state.selectedTerminalId = null;
+        if (state.position) await refresh();
+      }
     } catch {
       renderDestinationSuggestions([]);
     }
@@ -188,11 +209,24 @@ function renderDestinationSuggestions(places) {
     `;
     button.addEventListener("click", () => {
       state.destination = place;
+      state.selectedTerminalId = null;
       elements.destinationInput.value = place.label;
       renderDestinationSuggestions([]);
+      if (state.position) refresh();
     });
     elements.destinationSuggestions.append(button);
   }
+}
+
+function appendDestinationParams(query) {
+  if (!state.destination) return;
+  query.set("destLat", String(state.destination.lat));
+  query.set("destLon", String(state.destination.lon));
+}
+
+function closeSuggestionsOnOutsideClick(event) {
+  if (event.target === elements.destinationInput || elements.destinationSuggestions.contains(event.target)) return;
+  renderDestinationSuggestions([]);
 }
 
 function renderAlerts(alerts) {

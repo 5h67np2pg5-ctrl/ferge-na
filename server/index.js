@@ -197,6 +197,14 @@ function parseLatLon(searchParams) {
   return { lat, lon };
 }
 
+function parseOptionalDestination(searchParams) {
+  const lat = Number(searchParams.get("destLat"));
+  const lon = Number(searchParams.get("destLon"));
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+  return { lat, lon };
+}
+
 function distanceKm(a, b) {
   const R = 6371;
   const dLat = toRad(b.lat - a.lat);
@@ -327,7 +335,8 @@ function normalizeEnturLine(line) {
       source: "entur",
       authority: line.authority?.name || "Entur",
       transportSubmode: line.transportSubmode,
-      quayCount: quays.length
+      quayCount: quays.length,
+      lineQuays: quays
     };
   });
 }
@@ -417,11 +426,12 @@ function fallbackDrive(origin, destination) {
   };
 }
 
-function buildDecision(route, drive, departuresFromEntur = [], now = new Date()) {
+function buildDecision(route, drive, enturSchedule = {}, now = new Date()) {
   const meta = routeMeta[route.routeId] || { intervalMinutes: 30, crossingMinutes: 25 };
   const bufferMinutes = Math.max(2, Math.min(12, Math.ceil(drive.durationMinutes * 0.12)));
   const queueMinutes = estimateQueueMinutes(drive.trafficDelayMinutes, route.priority);
   const neededMinutes = drive.durationMinutes + queueMinutes + bufferMinutes;
+  const departuresFromEntur = enturSchedule.departures || [];
   const departures = departuresFromEntur.length ? departuresFromEntur : nextDepartures(meta.intervalMinutes, 6, now);
   const reachable = departures.find((departure) => {
     const minutesUntil = Math.floor((departure.getTime() - now.getTime()) / 60_000);
@@ -441,7 +451,7 @@ function buildDecision(route, drive, departuresFromEntur = [], now = new Date())
     sideName: route.sideName,
     departureTime: reachable.toISOString(),
     departureLabel: reachable.toLocaleTimeString("no-NO", { hour: "2-digit", minute: "2-digit" }),
-    crossingMinutes: meta.crossingMinutes,
+    crossingMinutes: enturSchedule.crossingMinutes || meta.crossingMinutes,
     timetableSource: departuresFromEntur.length ? "entur" : "estimated",
     drive,
     queueMinutes,
@@ -480,41 +490,91 @@ async function fetchEnturDepartures(quayId, lineId) {
               id
             }
           }
+          serviceJourneyEstimatedCalls {
+            next {
+              aimedArrivalTime
+              expectedArrivalTime
+            }
+          }
         }
       }
     }
   `;
 
   const data = await enturGraphql(query, { id: quayId });
-  return (data.quay?.estimatedCalls || [])
+  const calls = (data.quay?.estimatedCalls || [])
     .filter((call) => !call.cancellation)
-    .filter((call) => !lineId || call.serviceJourney?.line?.id === lineId)
+    .filter((call) => !lineId || call.serviceJourney?.line?.id === lineId);
+
+  const departures = calls
     .map((call) => new Date(call.expectedDepartureTime || call.aimedDepartureTime))
     .filter((departure) => Number.isFinite(departure.getTime()))
     .sort((a, b) => a.getTime() - b.getTime());
+
+  const crossingMinutes = firstCrossingMinutes(calls);
+  return { departures, crossingMinutes };
+}
+
+function firstCrossingMinutes(calls) {
+  for (const call of calls) {
+    const departure = new Date(call.expectedDepartureTime || call.aimedDepartureTime);
+    const next = call.serviceJourneyEstimatedCalls?.next?.[0];
+    const arrival = new Date(next?.expectedArrivalTime || next?.aimedArrivalTime || "");
+    if (Number.isFinite(departure.getTime()) && Number.isFinite(arrival.getTime())) {
+      const minutes = Math.round((arrival.getTime() - departure.getTime()) / 60_000);
+      if (minutes > 0 && minutes < 240) return minutes;
+    }
+  }
+  return null;
 }
 
 async function getNearby(req, res, url) {
   const origin = parseLatLon(url.searchParams);
   if (!origin) return badRequest(res, "Mangler gyldig lat/lon.");
+  const destination = parseOptionalDestination(url.searchParams);
 
   const entur = await getEnturCarFerryRoutes();
   const sourceRoutes = entur.routes.length ? entur.routes : getCuratedFallbackRoutes();
   const byRoute = new Map();
+  const originToDestinationKm = destination ? distanceKm(origin, destination) : null;
 
   for (const terminal of sourceRoutes) {
+    const departureDistanceKm = distanceKm(origin, terminal);
+    const arrivalDistanceKm = destination ? distanceFromArrivalSideToDestination(terminal, destination) : null;
+    const departureToDestinationKm = destination ? distanceKm(terminal, destination) : null;
+    const destinationGainKm =
+      destination && Number.isFinite(arrivalDistanceKm) && Number.isFinite(departureToDestinationKm)
+        ? departureToDestinationKm - arrivalDistanceKm
+        : null;
+
+    if (destination && Number.isFinite(destinationGainKm) && destinationGainKm <= 1) {
+      continue;
+    }
+
+    const maxRelevantDepartureKm = destination
+      ? Math.max(15, originToDestinationKm * 1.25)
+      : Infinity;
+    if (destination && departureDistanceKm > maxRelevantDepartureKm) {
+      continue;
+    }
+
     const candidate = {
       ...terminal,
-      distanceKm: Math.round(distanceKm(origin, terminal) * 10) / 10
+      distanceKm: Math.round(departureDistanceKm * 10) / 10,
+      arrivalDistanceKm: Number.isFinite(arrivalDistanceKm) ? Math.round(arrivalDistanceKm * 10) / 10 : null,
+      destinationGainKm: Number.isFinite(destinationGainKm) ? Math.round(destinationGainKm * 10) / 10 : null,
+      relevanceScore: destination && Number.isFinite(arrivalDistanceKm)
+        ? departureDistanceKm + arrivalDistanceKm * 0.55
+        : departureDistanceKm
     };
     const current = byRoute.get(candidate.routeId);
-    if (!current || candidate.distanceKm < current.distanceKm) {
+    if (!current || candidate.relevanceScore < current.relevanceScore) {
       byRoute.set(candidate.routeId, candidate);
     }
   }
 
   const nearby = [...byRoute.values()]
-    .sort((a, b) => a.distanceKm - b.distanceKm)
+    .sort((a, b) => a.relevanceScore - b.relevanceScore)
     .slice(0, Number(url.searchParams.get("limit") || 10));
 
   sendJson(res, 200, {
@@ -526,6 +586,13 @@ async function getNearby(req, res, url) {
     },
     routes: nearby
   });
+}
+
+function distanceFromArrivalSideToDestination(terminal, destination) {
+  if (!Array.isArray(terminal.lineQuays)) return null;
+  const otherQuays = terminal.lineQuays.filter((quay) => quay.id !== terminal.id);
+  if (!otherQuays.length) return null;
+  return Math.min(...otherQuays.map((quay) => distanceKm(destination, quay)));
 }
 
 async function getDecision(req, res, url) {
@@ -552,18 +619,18 @@ async function getDecision(req, res, url) {
 
   if (!drive) drive = fallbackDrive(origin, selected);
 
-  let departures = [];
+  let enturSchedule = {};
   let departureError = null;
   if (selected.source === "entur") {
     try {
-      departures = await fetchEnturDepartures(selected.id, selected.lineId);
+      enturSchedule = await fetchEnturDepartures(selected.id, selected.lineId);
     } catch (error) {
       departureError = error.message;
     }
   }
 
   sendJson(res, 200, {
-    decision: buildDecision(selected, drive, departures),
+    decision: buildDecision(selected, drive, enturSchedule),
     routeError,
     departureError
   });
