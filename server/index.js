@@ -717,23 +717,7 @@ async function getAlerts(_req, res, url) {
   const origin = parseLatLon(url.searchParams);
   if (!origin) return badRequest(res, "Mangler gyldig lat/lon.");
 
-  const nearbyChargerCount = origin.lat > 66 ? 1 : 3;
-  const conditions = [
-    {
-      id: "road-surface",
-      level: origin.lat > 62 ? "warning" : "info",
-      title: origin.lat > 62 ? "Mulig glatt føre" : "Ingen kritiske føremeldinger",
-      detail: origin.lat > 62 ? "Sjekk fart og margin. Beregningen legger inn ekstra buffer." : "Live DATEX-kobling kan aktiveres i produksjon."
-    },
-    {
-      id: "charging",
-      level: "info",
-      title: `${nearbyChargerCount} ladestasjoner langs aktuell rute`,
-      detail: "NOBIL API kobles inn for effekt, kontakt og tilgjengelighet."
-    }
-  ];
-
-  sendJson(res, 200, { alerts: conditions });
+  sendJson(res, 200, { alerts: [] });
 }
 
 async function getPlaces(_req, res, url) {

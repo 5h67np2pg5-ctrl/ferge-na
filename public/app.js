@@ -7,7 +7,7 @@ const state = {
   routes: []
 };
 
-const APP_VERSION = "v10";
+const APP_VERSION = "v12";
 
 const elements = {
   locateButton: document.querySelector("#locateButton"),
@@ -37,6 +37,7 @@ elements.refreshButton.addEventListener("click", refresh);
 elements.modeButtons.forEach((button) => button.addEventListener("click", () => setTravelMode(button.dataset.mode)));
 elements.destinationInput.addEventListener("input", handleDestinationInput);
 elements.destinationInput.addEventListener("focus", handleDestinationInput);
+elements.destinationInput.addEventListener("keydown", handleDestinationKeydown);
 document.addEventListener("pointerdown", closeSuggestionsOnOutsideClick);
 
 disableServiceWorkerCache();
@@ -189,12 +190,13 @@ function renderRoutes(errorMessage = "") {
     const button = document.createElement("button");
     button.className = route.id === state.selectedTerminalId ? "route-card active" : "route-card";
     button.type = "button";
+    button.setAttribute("aria-pressed", route.id === state.selectedTerminalId ? "true" : "false");
     button.innerHTML = `
       <span>
         <strong>${escapeHtml(route.sideName)} ferjekai</strong>
         <span>${escapeHtml(formatRouteDescriptor(route))} · ${escapeHtml(route.distanceKm)} km til avgangskai</span>
       </span>
-      <em>Velg</em>
+      <em>${route.id === state.selectedTerminalId ? "Valgt" : "Velg"}</em>
     `;
     button.addEventListener("click", async () => {
       renderDestinationSuggestions([]);
@@ -222,7 +224,9 @@ async function setTravelMode(mode) {
 
 function renderTravelMode() {
   for (const button of elements.modeButtons) {
-    button.classList.toggle("active", button.dataset.mode === state.travelMode);
+    const active = button.dataset.mode === state.travelMode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
   }
 }
 
@@ -244,15 +248,19 @@ function handleDestinationInput() {
       const payload = await fetchJson(`/api/places?${query}`);
       const places = payload.places || [];
       renderDestinationSuggestions(places);
-      if (places[0] && state.destination?.id !== places[0].id) {
-        state.destination = places[0];
-        state.selectedTerminalId = null;
-        if (state.position) await refresh();
-      }
     } catch {
       renderDestinationSuggestions([]);
     }
   }, 180);
+}
+
+async function handleDestinationKeydown(event) {
+  if (event.key !== "Enter") return;
+  const firstSuggestion = elements.destinationSuggestions.querySelector(".suggestion-button");
+  if (firstSuggestion) {
+    event.preventDefault();
+    firstSuggestion.click();
+  }
 }
 
 function renderDestinationSuggestions(places) {
@@ -291,6 +299,7 @@ function closeSuggestionsOnOutsideClick(event) {
 
 function renderAlerts(alerts) {
   elements.noticeStack.innerHTML = "";
+  elements.noticeStack.hidden = alerts.length === 0;
   for (const alert of alerts) {
     const item = document.createElement("article");
     item.className = `notice ${alert.level || "info"}`;
@@ -318,13 +327,7 @@ function seedDemo() {
     hour: "2-digit",
     minute: "2-digit"
   });
-  renderAlerts([
-    {
-      level: "info",
-      title: "Én hovedflate",
-      detail: "Posisjon, samband, kjøretid, købuffer og varsler samles her."
-    }
-  ]);
+  renderAlerts([]);
 }
 
 async function enableNotifications() {
