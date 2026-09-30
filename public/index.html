@@ -19,6 +19,17 @@
         <button class="icon-button" id="refreshButton" type="button" aria-label="Oppdater">↻</button>
       </section>
 
+      <section class="quick-actions" aria-label="Start">
+        <button class="primary-action" id="locateButton" type="button">Bruk min posisjon</button>
+        <button class="secondary-action" id="notifyButton" type="button">Varsler</button>
+      </section>
+
+      <section class="destination-panel" aria-label="Endelig destinasjon">
+        <label for="destinationInput">Endelig destinasjon</label>
+        <input id="destinationInput" type="search" autocomplete="off" placeholder="Skriv sted, adresse eller kai" />
+        <div class="suggestions" id="destinationSuggestions"></div>
+      </section>
+
       <section class="hero-panel" aria-live="polite">
         <div class="status-row">
           <span class="status-pill" id="statusPill">Venter på posisjon</span>
@@ -36,10 +47,6 @@
         </div>
         <h2 id="routeName">Finn nærmeste fergesamband</h2>
         <p id="recommendation">Del posisjon for å se aktuell avreiseside, kjøretid, købuffer og om du rekker avgangen.</p>
-        <div class="action-row">
-          <button class="primary-action" id="locateButton" type="button">Bruk min posisjon</button>
-          <button class="secondary-action" id="notifyButton" type="button">Varsler</button>
-        </div>
       </section>
 
       <section class="metrics" aria-label="Reisetid">
@@ -54,6 +61,10 @@
         <article>
           <span>Buffer</span>
           <strong id="bufferTime">--</strong>
+        </article>
+        <article>
+          <span>Overfart</span>
+          <strong id="crossingTime">--</strong>
         </article>
       </section>
 

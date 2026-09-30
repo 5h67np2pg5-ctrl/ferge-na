@@ -11,6 +11,8 @@ const publicDir = join(rootDir, "public");
 const PORT = Number(process.env.PORT || 3000);
 const ENTUR_CLIENT_NAME = process.env.ENTUR_CLIENT_NAME || "ferge-na-dev/0.1";
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || "";
+const ENTUR_GRAPHQL_URL = "https://api.entur.io/journey-planner/v3/graphql";
+const ENTUR_FERRY_CACHE_TTL_MS = 60 * 60 * 1000;
 
 const jsonHeaders = {
   "content-type": "application/json; charset=utf-8",
@@ -172,6 +174,12 @@ const routeMeta = {
   "moss-horten": { intervalMinutes: 30, crossingMinutes: 30 }
 };
 
+let enturFerryCache = {
+  fetchedAt: 0,
+  routes: [],
+  error: null
+};
+
 function sendJson(res, status, payload) {
   res.writeHead(status, jsonHeaders);
   res.end(JSON.stringify(payload));
@@ -216,6 +224,127 @@ function nextDepartures(intervalMinutes, count = 5, now = new Date()) {
     departures.push(new Date(start.getTime() + i * intervalMinutes * 60_000));
   }
   return departures;
+}
+
+async function enturGraphql(query, variables = {}) {
+  const response = await fetch(ENTUR_GRAPHQL_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "ET-Client-Name": ENTUR_CLIENT_NAME
+    },
+    body: JSON.stringify({ query, variables })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Entur ${response.status}`);
+  }
+
+  const data = await response.json();
+  if (data.errors?.length) {
+    throw new Error(data.errors.map((error) => error.message).join("; "));
+  }
+  return data.data;
+}
+
+async function getEnturCarFerryRoutes({ force = false } = {}) {
+  const now = Date.now();
+  if (!force && enturFerryCache.routes.length && now - enturFerryCache.fetchedAt < ENTUR_FERRY_CACHE_TTL_MS) {
+    return enturFerryCache;
+  }
+
+  const query = `
+    query FerryLines {
+      lines(transportModes: [water]) {
+        id
+        name
+        publicCode
+        transportSubmode
+        authority {
+          id
+          name
+        }
+        quays {
+          id
+          name
+          latitude
+          longitude
+          stopPlace {
+            id
+            name
+            latitude
+            longitude
+          }
+        }
+      }
+    }
+  `;
+
+  try {
+    const data = await enturGraphql(query);
+    const routes = (data.lines || [])
+      .filter((line) => line.transportSubmode === "localCarFerry")
+      .flatMap((line) => normalizeEnturLine(line));
+
+    enturFerryCache = { fetchedAt: now, routes, error: null };
+    return enturFerryCache;
+  } catch (error) {
+    enturFerryCache = {
+      ...enturFerryCache,
+      error: error.message
+    };
+    return enturFerryCache;
+  }
+}
+
+function normalizeEnturLine(line) {
+  const quays = (line.quays || [])
+    .map((quay) => ({
+      id: quay.id,
+      name: quay.name || quay.stopPlace?.name || "Ukjent ferjekai",
+      lat: Number(quay.latitude ?? quay.stopPlace?.latitude),
+      lon: Number(quay.longitude ?? quay.stopPlace?.longitude)
+    }))
+    .filter((quay) => quay.id && Number.isFinite(quay.lat) && Number.isFinite(quay.lon));
+
+  if (quays.length < 2) return [];
+
+  return quays.map((quay) => {
+    const others = quays.filter((candidate) => candidate.id !== quay.id);
+    const opposite = others.length === 1 ? stripKaiSuffix(others[0].name) : `${others.length} andre kaier`;
+    return {
+      id: quay.id,
+      name: quay.name,
+      routeId: line.id,
+      lineId: line.id,
+      routeName: formatRouteName(line),
+      routeCode: line.publicCode || "",
+      sideName: stripKaiSuffix(quay.name),
+      oppositeSideName: opposite,
+      lat: quay.lat,
+      lon: quay.lon,
+      priority: 1,
+      source: "entur",
+      authority: line.authority?.name || "Entur",
+      transportSubmode: line.transportSubmode,
+      quayCount: quays.length
+    };
+  });
+}
+
+function formatRouteName(line) {
+  const name = normalizeName(line.name || "Ukjent fergesamband");
+  return line.publicCode ? `${line.publicCode} ${name}` : name;
+}
+
+function normalizeName(value) {
+  return String(value).replace(/\s*-\s*/g, "-").replace(/\s+/g, " ").trim();
+}
+
+function stripKaiSuffix(value) {
+  return normalizeName(value)
+    .replace(/\s+ferje?kai$/i, "")
+    .replace(/\s+kai$/i, "");
 }
 
 async function getGoogleRoute(origin, destination) {
@@ -288,12 +417,12 @@ function fallbackDrive(origin, destination) {
   };
 }
 
-function buildDecision(route, drive, now = new Date()) {
+function buildDecision(route, drive, departuresFromEntur = [], now = new Date()) {
   const meta = routeMeta[route.routeId] || { intervalMinutes: 30, crossingMinutes: 25 };
   const bufferMinutes = Math.max(2, Math.min(12, Math.ceil(drive.durationMinutes * 0.12)));
   const queueMinutes = estimateQueueMinutes(drive.trafficDelayMinutes, route.priority);
   const neededMinutes = drive.durationMinutes + queueMinutes + bufferMinutes;
-  const departures = nextDepartures(meta.intervalMinutes, 6, now);
+  const departures = departuresFromEntur.length ? departuresFromEntur : nextDepartures(meta.intervalMinutes, 6, now);
   const reachable = departures.find((departure) => {
     const minutesUntil = Math.floor((departure.getTime() - now.getTime()) / 60_000);
     return minutesUntil >= neededMinutes;
@@ -313,6 +442,7 @@ function buildDecision(route, drive, now = new Date()) {
     departureTime: reachable.toISOString(),
     departureLabel: reachable.toLocaleTimeString("no-NO", { hour: "2-digit", minute: "2-digit" }),
     crossingMinutes: meta.crossingMinutes,
+    timetableSource: departuresFromEntur.length ? "entur" : "estimated",
     drive,
     queueMinutes,
     bufferMinutes,
@@ -332,44 +462,47 @@ function estimateQueueMinutes(trafficDelayMinutes, priority) {
   return Math.min(25, Math.ceil(liveDelay * 0.65 + terminalLoad));
 }
 
-async function fetchEnturNearbyFerries(_origin) {
-  // Placeholder for production Entur integration. The fallback data keeps the MVP
-  // usable while exact national ferry quay filtering is validated against Entur.
+async function fetchEnturDepartures(quayId, lineId) {
   const query = `
-    query {
-      quays(name: "ferjekai", first: 1) {
-        id
-        name
+    query Departures($id: String!) {
+      quay(id: $id) {
+        estimatedCalls(
+          timeRange: 43200
+          numberOfDepartures: 24
+          arrivalDeparture: departures
+          includeCancelledTrips: false
+        ) {
+          aimedDepartureTime
+          expectedDepartureTime
+          cancellation
+          serviceJourney {
+            line {
+              id
+            }
+          }
+        }
       }
     }
   `;
 
-  try {
-    const response = await fetch("https://api.entur.io/journey-planner/v3/graphql", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "ET-Client-Name": ENTUR_CLIENT_NAME
-      },
-      body: JSON.stringify({ query })
-    });
-
-    if (!response.ok) return { available: false, reason: `Entur ${response.status}` };
-    const data = await response.json();
-    return { available: true, sample: data.data?.quays?.[0] || null };
-  } catch (error) {
-    return { available: false, reason: error.message };
-  }
+  const data = await enturGraphql(query, { id: quayId });
+  return (data.quay?.estimatedCalls || [])
+    .filter((call) => !call.cancellation)
+    .filter((call) => !lineId || call.serviceJourney?.line?.id === lineId)
+    .map((call) => new Date(call.expectedDepartureTime || call.aimedDepartureTime))
+    .filter((departure) => Number.isFinite(departure.getTime()))
+    .sort((a, b) => a.getTime() - b.getTime());
 }
 
 async function getNearby(req, res, url) {
   const origin = parseLatLon(url.searchParams);
   if (!origin) return badRequest(res, "Mangler gyldig lat/lon.");
 
-  const enturProbe = await fetchEnturNearbyFerries(origin);
+  const entur = await getEnturCarFerryRoutes();
+  const sourceRoutes = entur.routes.length ? entur.routes : getCuratedFallbackRoutes();
   const byRoute = new Map();
 
-  for (const terminal of terminals) {
+  for (const terminal of sourceRoutes) {
     const candidate = {
       ...terminal,
       distanceKm: Math.round(distanceKm(origin, terminal) * 10) / 10
@@ -385,8 +518,12 @@ async function getNearby(req, res, url) {
     .slice(0, Number(url.searchParams.get("limit") || 10));
 
   sendJson(res, 200, {
-    source: enturProbe.available ? "entur+curated-fallback" : "curated-fallback",
-    entur: enturProbe,
+    source: entur.routes.length ? "entur-authoritative" : "curated-fallback",
+    entur: {
+      routeCount: entur.routes.length,
+      fetchedAt: entur.fetchedAt ? new Date(entur.fetchedAt).toISOString() : null,
+      error: entur.error
+    },
     routes: nearby
   });
 }
@@ -396,9 +533,11 @@ async function getDecision(req, res, url) {
   if (!origin) return badRequest(res, "Mangler gyldig lat/lon.");
 
   const terminalId = url.searchParams.get("terminalId");
+  const entur = await getEnturCarFerryRoutes();
+  const sourceRoutes = entur.routes.length ? entur.routes : getCuratedFallbackRoutes();
   const selected =
-    terminals.find((terminal) => terminal.id === terminalId) ||
-    terminals
+    sourceRoutes.find((terminal) => terminal.id === terminalId) ||
+    sourceRoutes
       .map((terminal) => ({ ...terminal, distanceKm: distanceKm(origin, terminal) }))
       .sort((a, b) => a.distanceKm - b.distanceKm)[0];
 
@@ -413,10 +552,25 @@ async function getDecision(req, res, url) {
 
   if (!drive) drive = fallbackDrive(origin, selected);
 
+  let departures = [];
+  let departureError = null;
+  if (selected.source === "entur") {
+    try {
+      departures = await fetchEnturDepartures(selected.id, selected.lineId);
+    } catch (error) {
+      departureError = error.message;
+    }
+  }
+
   sendJson(res, 200, {
-    decision: buildDecision(selected, drive),
-    routeError
+    decision: buildDecision(selected, drive, departures),
+    routeError,
+    departureError
   });
+}
+
+function getCuratedFallbackRoutes() {
+  return terminals.map((terminal) => ({ ...terminal, source: "curated-fallback" }));
 }
 
 async function getAlerts(_req, res, url) {
@@ -446,6 +600,40 @@ async function getAlerts(_req, res, url) {
   ];
 
   sendJson(res, 200, { alerts: conditions });
+}
+
+async function getPlaces(_req, res, url) {
+  const text = (url.searchParams.get("text") || "").trim();
+  if (text.length < 2) {
+    return sendJson(res, 200, { places: [] });
+  }
+
+  const geocoderUrl = new URL("https://api.entur.io/geocoder/v2/autocomplete");
+  geocoderUrl.searchParams.set("text", text);
+  geocoderUrl.searchParams.set("lang", "no");
+  geocoderUrl.searchParams.set("size", "8");
+
+  const response = await fetch(geocoderUrl, {
+    headers: {
+      "ET-Client-Name": ENTUR_CLIENT_NAME
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Entur geocoder ${response.status}`);
+  }
+
+  const data = await response.json();
+  const places = (data.features || []).map((feature) => ({
+    id: feature.properties?.id || feature.properties?.gid || feature.properties?.label,
+    name: feature.properties?.name || feature.properties?.label,
+    label: feature.properties?.label || feature.properties?.name,
+    locality: feature.properties?.locality || feature.properties?.county || "",
+    lat: feature.geometry?.coordinates?.[1],
+    lon: feature.geometry?.coordinates?.[0]
+  })).filter((place) => place.id && place.label && Number.isFinite(place.lat) && Number.isFinite(place.lon));
+
+  sendJson(res, 200, { places });
 }
 
 async function serveStatic(res, pathname) {
@@ -482,6 +670,7 @@ const server = createServer(async (req, res) => {
     if (url.pathname === "/api/ferries/nearby") return getNearby(req, res, url);
     if (url.pathname === "/api/decision") return getDecision(req, res, url);
     if (url.pathname === "/api/alerts") return getAlerts(req, res, url);
+    if (url.pathname === "/api/places") return getPlaces(req, res, url);
 
     return serveStatic(res, url.pathname);
   } catch (error) {

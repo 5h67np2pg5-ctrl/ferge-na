@@ -1,6 +1,8 @@
 const state = {
   position: null,
   selectedTerminalId: null,
+  destination: null,
+  destinationSearchTimer: null,
   routes: []
 };
 
@@ -17,6 +19,9 @@ const elements = {
   driveTime: document.querySelector("#driveTime"),
   queueTime: document.querySelector("#queueTime"),
   bufferTime: document.querySelector("#bufferTime"),
+  crossingTime: document.querySelector("#crossingTime"),
+  destinationInput: document.querySelector("#destinationInput"),
+  destinationSuggestions: document.querySelector("#destinationSuggestions"),
   noticeStack: document.querySelector("#noticeStack"),
   routeList: document.querySelector("#routeList"),
   sourceLabel: document.querySelector("#sourceLabel")
@@ -25,6 +30,8 @@ const elements = {
 elements.locateButton.addEventListener("click", locate);
 elements.notifyButton.addEventListener("click", enableNotifications);
 elements.refreshButton.addEventListener("click", refresh);
+elements.destinationInput.addEventListener("input", handleDestinationInput);
+elements.destinationInput.addEventListener("focus", handleDestinationInput);
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js").catch(() => {});
@@ -73,7 +80,7 @@ async function refresh() {
 
   const nearby = await fetchJson(`/api/ferries/nearby?${query}`);
   state.routes = nearby.routes || [];
-  elements.sourceLabel.textContent = nearby.source?.includes("entur") ? "Entur + fallback" : "Fallback";
+  elements.sourceLabel.textContent = nearby.source === "entur-authoritative" ? "Entur" : "Fallback";
 
   if (!state.selectedTerminalId && state.routes[0]) {
     state.selectedTerminalId = state.routes[0].id;
@@ -103,11 +110,12 @@ async function updateDecision() {
   });
   elements.departureTime.textContent = decision.departureLabel;
   elements.margin.textContent = `${decision.marginMinutes} min`;
-  elements.routeName.textContent = `${decision.routeName} fra ${decision.sideName}`;
+  elements.routeName.textContent = `${decision.sideName} ferjekai`;
   elements.recommendation.textContent = decision.recommendation;
   elements.driveTime.textContent = `${decision.drive.durationMinutes} min`;
   elements.queueTime.textContent = `${decision.queueMinutes} min`;
   elements.bufferTime.textContent = `${decision.bufferMinutes} min`;
+  elements.crossingTime.textContent = `${decision.crossingMinutes} min`;
 
   maybeNotify(decision);
 }
@@ -129,16 +137,61 @@ function renderRoutes() {
     button.type = "button";
     button.innerHTML = `
       <span>
-        <strong>${escapeHtml(route.routeName)}</strong>
-        <span>${escapeHtml(route.sideName)} → ${escapeHtml(route.oppositeSideName || "motsatt kai")} · ${escapeHtml(route.name)}</span>
+        <strong>${escapeHtml(route.sideName)} ferjekai</strong>
+        <span>${escapeHtml(formatRouteDescriptor(route))} · ${escapeHtml(route.distanceKm)} km til avgangskai</span>
       </span>
-      <em>${route.distanceKm} km</em>
+      <em>Velg</em>
     `;
     button.addEventListener("click", async () => {
       state.selectedTerminalId = route.id;
       await updateDecision();
     });
     elements.routeList.append(button);
+  }
+}
+
+function formatRouteDescriptor(route) {
+  return route.routeCode ? `Samband ${route.routeCode}` : "Fergesamband";
+}
+
+function handleDestinationInput() {
+  const text = elements.destinationInput.value.trim();
+  window.clearTimeout(state.destinationSearchTimer);
+
+  if (text.length < 2) {
+    renderDestinationSuggestions([]);
+    return;
+  }
+
+  state.destinationSearchTimer = window.setTimeout(async () => {
+    const query = new URLSearchParams({ text });
+    try {
+      const payload = await fetchJson(`/api/places?${query}`);
+      renderDestinationSuggestions(payload.places || []);
+    } catch {
+      renderDestinationSuggestions([]);
+    }
+  }, 180);
+}
+
+function renderDestinationSuggestions(places) {
+  elements.destinationSuggestions.innerHTML = "";
+  elements.destinationSuggestions.classList.toggle("visible", places.length > 0);
+
+  for (const place of places) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "suggestion-button";
+    button.innerHTML = `
+      <strong>${escapeHtml(place.name)}</strong>
+      <span>${escapeHtml(place.label)}</span>
+    `;
+    button.addEventListener("click", () => {
+      state.destination = place;
+      elements.destinationInput.value = place.label;
+      renderDestinationSuggestions([]);
+    });
+    elements.destinationSuggestions.append(button);
   }
 }
 
