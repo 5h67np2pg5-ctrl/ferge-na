@@ -35,6 +35,7 @@ const terminals = [
     routeId: "halhjem-sandvikvag",
     routeName: "Halhjem-Sandvikvåg",
     sideName: "Halhjem",
+    oppositeSideName: "Sandvikvåg",
     lat: 60.14338,
     lon: 5.43355,
     priority: 1
@@ -45,8 +46,31 @@ const terminals = [
     routeId: "halhjem-sandvikvag",
     routeName: "Halhjem-Sandvikvåg",
     sideName: "Sandvikvåg",
+    oppositeSideName: "Halhjem",
     lat: 59.93059,
     lon: 5.41956,
+    priority: 1
+  },
+  {
+    id: "hatvik",
+    name: "Hatvik ferjekai",
+    routeId: "hatvik-venjaneset",
+    routeName: "Hatvik-Venjaneset",
+    sideName: "Hatvik",
+    oppositeSideName: "Venjaneset",
+    lat: 60.209,
+    lon: 5.537,
+    priority: 1
+  },
+  {
+    id: "venjaneset",
+    name: "Venjaneset ferjekai",
+    routeId: "hatvik-venjaneset",
+    routeName: "Hatvik-Venjaneset",
+    sideName: "Venjaneset",
+    oppositeSideName: "Hatvik",
+    lat: 60.20559,
+    lon: 5.59345,
     priority: 1
   },
   {
@@ -55,6 +79,7 @@ const terminals = [
     routeId: "lavik-oppedal",
     routeName: "Lavik-Oppedal",
     sideName: "Lavik",
+    oppositeSideName: "Oppedal",
     lat: 61.1042,
     lon: 5.5146,
     priority: 2
@@ -65,6 +90,7 @@ const terminals = [
     routeId: "lavik-oppedal",
     routeName: "Lavik-Oppedal",
     sideName: "Oppedal",
+    oppositeSideName: "Lavik",
     lat: 61.08642,
     lon: 5.46064,
     priority: 2
@@ -75,6 +101,7 @@ const terminals = [
     routeId: "mortavika-arsvagen",
     routeName: "Mortavika-Arsvågen",
     sideName: "Mortavika",
+    oppositeSideName: "Arsvågen",
     lat: 59.06608,
     lon: 5.58846,
     priority: 1
@@ -85,6 +112,7 @@ const terminals = [
     routeId: "mortavika-arsvagen",
     routeName: "Mortavika-Arsvågen",
     sideName: "Arsvågen",
+    oppositeSideName: "Mortavika",
     lat: 59.23252,
     lon: 5.45922,
     priority: 1
@@ -95,6 +123,7 @@ const terminals = [
     routeId: "bognes-skarberget",
     routeName: "Bognes-Skarberget",
     sideName: "Bognes",
+    oppositeSideName: "Skarberget",
     lat: 68.22362,
     lon: 16.09838,
     priority: 3
@@ -105,6 +134,7 @@ const terminals = [
     routeId: "bognes-skarberget",
     routeName: "Bognes-Skarberget",
     sideName: "Skarberget",
+    oppositeSideName: "Bognes",
     lat: 68.19617,
     lon: 16.27765,
     priority: 3
@@ -115,6 +145,7 @@ const terminals = [
     routeId: "moss-horten",
     routeName: "Moss-Horten",
     sideName: "Moss",
+    oppositeSideName: "Horten",
     lat: 59.43364,
     lon: 10.65814,
     priority: 1
@@ -125,6 +156,7 @@ const terminals = [
     routeId: "moss-horten",
     routeName: "Moss-Horten",
     sideName: "Horten",
+    oppositeSideName: "Moss",
     lat: 59.4147,
     lon: 10.48501,
     priority: 1
@@ -133,6 +165,7 @@ const terminals = [
 
 const routeMeta = {
   "halhjem-sandvikvag": { intervalMinutes: 30, crossingMinutes: 45 },
+  "hatvik-venjaneset": { intervalMinutes: 20, crossingMinutes: 12 },
   "lavik-oppedal": { intervalMinutes: 20, crossingMinutes: 20 },
   "mortavika-arsvagen": { intervalMinutes: 30, crossingMinutes: 24 },
   "bognes-skarberget": { intervalMinutes: 45, crossingMinutes: 25 },
@@ -334,11 +367,20 @@ async function getNearby(req, res, url) {
   if (!origin) return badRequest(res, "Mangler gyldig lat/lon.");
 
   const enturProbe = await fetchEnturNearbyFerries(origin);
-  const nearby = terminals
-    .map((terminal) => ({
+  const byRoute = new Map();
+
+  for (const terminal of terminals) {
+    const candidate = {
       ...terminal,
       distanceKm: Math.round(distanceKm(origin, terminal) * 10) / 10
-    }))
+    };
+    const current = byRoute.get(candidate.routeId);
+    if (!current || candidate.distanceKm < current.distanceKm) {
+      byRoute.set(candidate.routeId, candidate);
+    }
+  }
+
+  const nearby = [...byRoute.values()]
     .sort((a, b) => a.distanceKm - b.distanceKm)
     .slice(0, Number(url.searchParams.get("limit") || 10));
 

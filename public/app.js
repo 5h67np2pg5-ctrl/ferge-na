@@ -130,7 +130,7 @@ function renderRoutes() {
     button.innerHTML = `
       <span>
         <strong>${escapeHtml(route.routeName)}</strong>
-        <span>${escapeHtml(route.sideName)} · ${escapeHtml(route.name)}</span>
+        <span>${escapeHtml(route.sideName)} → ${escapeHtml(route.oppositeSideName || "motsatt kai")} · ${escapeHtml(route.name)}</span>
       </span>
       <em>${route.distanceKm} km</em>
     `;
