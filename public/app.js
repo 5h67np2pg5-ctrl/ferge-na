@@ -7,7 +7,16 @@ const state = {
   routes: []
 };
 
-const APP_VERSION = "v14";
+const APP_VERSION = "v15";
+
+const CLIENT_FALLBACK_TERMINALS = [
+  { id: "halhjem", sideName: "Halhjem", routeName: "Halhjem-Sandvikvåg", routeCode: "1018", transportSubmode: "localCarFerry", lat: 60.14338, lon: 5.43355 },
+  { id: "hatvik", sideName: "Hatvik", routeName: "Hatvik-Venjaneset", routeCode: "1020", transportSubmode: "localCarFerry", lat: 60.208524, lon: 5.53715 },
+  { id: "krokeide", sideName: "Krokeide", routeName: "Hufthamar-Krokeide", routeCode: "1022", transportSubmode: "localCarFerry", lat: 60.217, lon: 5.247 },
+  { id: "lavik", sideName: "Lavik", routeName: "Lavik-Oppedal", routeCode: "1045", transportSubmode: "localCarFerry", lat: 61.1042, lon: 5.5146 },
+  { id: "moss", sideName: "Moss", routeName: "Moss-Horten", routeCode: "", transportSubmode: "localCarFerry", lat: 59.43364, lon: 10.65814 },
+  { id: "horten", sideName: "Horten", routeName: "Moss-Horten", routeCode: "", transportSubmode: "localCarFerry", lat: 59.4147, lon: 10.48501 }
+];
 
 const elements = {
   locateButton: document.querySelector("#locateButton"),
@@ -102,9 +111,9 @@ async function refresh() {
       destinationFiltered = false;
     }
 
-    state.routes = nearby.routes || [];
+    state.routes = (nearby.routes || []).length ? nearby.routes : getClientFallbackRoutes();
     elements.routeListTitle.textContent = destinationFiltered ? "Aktuelle samband" : "5 nærmeste samband";
-    elements.sourceLabel.textContent = `${nearby.source === "entur-authoritative" ? "Entur" : "Fallback"} · ${APP_VERSION}`;
+    elements.sourceLabel.textContent = `${(nearby.routes || []).length ? (nearby.source === "entur-authoritative" ? "Entur" : "Fallback") : "Lokal"} · ${APP_VERSION}`;
 
     if ((!state.selectedTerminalId || !state.routes.some((route) => route.id === state.selectedTerminalId)) && state.routes[0]) {
       state.selectedTerminalId = state.routes[0].id;
@@ -119,10 +128,13 @@ async function refresh() {
     await updateDecisionSafe();
     await updateAlertsSafe();
   } catch (error) {
-    state.routes = [];
-    renderRoutes(error.message);
-    elements.statusPill.textContent = "Kunne ikke hente ruter";
-    elements.statusPill.className = "status-pill low";
+    state.routes = getClientFallbackRoutes();
+    state.selectedTerminalId = state.routes[0]?.id || null;
+    elements.routeListTitle.textContent = "5 nærmeste samband";
+    elements.sourceLabel.textContent = `Lokal · ${APP_VERSION}`;
+    renderRoutes();
+    await updateDecisionSafe();
+    renderAlerts([]);
   }
 }
 
@@ -255,6 +267,34 @@ function renderRouteLoading() {
   loading.className = "empty-routes";
   loading.textContent = "Henter fergestrekninger...";
   elements.routeList.append(loading);
+}
+
+function getClientFallbackRoutes() {
+  const origin = state.position || { lat: 60.1838, lon: 5.4659 };
+  return CLIENT_FALLBACK_TERMINALS
+    .filter((route) => state.travelMode === "foot" || route.transportSubmode === "localCarFerry")
+    .map((route) => ({
+      ...route,
+      distanceKm: Math.round(distanceKm(origin, route) * 10) / 10
+    }))
+    .sort((a, b) => a.distanceKm - b.distanceKm)
+    .slice(0, 5);
+}
+
+function distanceKm(a, b) {
+  const earthRadiusKm = 6371;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 2 * earthRadiusKm * Math.asin(Math.sqrt(h));
+}
+
+function toRad(value) {
+  return (value * Math.PI) / 180;
 }
 
 function formatRouteDescriptor(route) {
