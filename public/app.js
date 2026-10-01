@@ -7,7 +7,7 @@ const state = {
   routes: []
 };
 
-const APP_VERSION = "v17";
+const APP_VERSION = "v18";
 
 const elements = {
   locateButton: document.querySelector("#locateButton"),
@@ -21,7 +21,6 @@ const elements = {
   routeName: document.querySelector("#routeName"),
   recommendation: document.querySelector("#recommendation"),
   driveTime: document.querySelector("#driveTime"),
-  queueTime: document.querySelector("#queueTime"),
   bufferTime: document.querySelector("#bufferTime"),
   crossingTime: document.querySelector("#crossingTime"),
   destinationInput: document.querySelector("#destinationInput"),
@@ -143,7 +142,6 @@ async function updateDecisionSafe() {
     elements.departureTime.textContent = "--:--";
     elements.margin.textContent = "--";
     elements.driveTime.textContent = "--";
-    elements.queueTime.textContent = "--";
     elements.bufferTime.textContent = "--";
     elements.crossingTime.textContent = "--";
   }
@@ -165,7 +163,6 @@ function clearDecision() {
   elements.routeName.textContent = "Ingen aktuell avgangskai";
   elements.recommendation.textContent = "Endre destinasjon, reisemåte eller posisjon.";
   elements.driveTime.textContent = "--";
-  elements.queueTime.textContent = "--";
   elements.bufferTime.textContent = "--";
   elements.crossingTime.textContent = "--";
 }
@@ -193,7 +190,6 @@ async function updateDecision() {
   elements.routeName.textContent = `${decision.sideName} ferjekai`;
   elements.recommendation.textContent = decision.recommendation;
   elements.driveTime.textContent = `${decision.drive.durationMinutes} min`;
-  elements.queueTime.textContent = `${decision.queueMinutes} min`;
   elements.bufferTime.textContent = `${decision.bufferMinutes} min`;
   elements.crossingTime.textContent = `${decision.crossingMinutes} min`;
 

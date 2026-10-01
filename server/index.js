@@ -56,6 +56,7 @@ function parseLatLon(searchParams) {
 }
 
 function parseOptionalDestination(searchParams) {
+  if (!searchParams.has("destLat") || !searchParams.has("destLon")) return null;
   const lat = Number(searchParams.get("destLat"));
   const lon = Number(searchParams.get("destLon"));
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
@@ -304,13 +305,12 @@ function fallbackDrive(origin, destination) {
 function buildDecision(route, drive, enturSchedule = {}, now = new Date()) {
   const meta = routeMeta[route.routeId] || { intervalMinutes: 30, crossingMinutes: 25 };
   const bufferMinutes = Math.max(2, Math.min(12, Math.ceil(drive.durationMinutes * 0.12)));
-  const queueMinutes = estimateQueueMinutes(drive.trafficDelayMinutes, route.priority);
-  const neededMinutes = drive.durationMinutes + queueMinutes + bufferMinutes;
+  const neededMinutes = drive.durationMinutes + bufferMinutes;
   const departuresFromEntur = enturSchedule.departures || [];
   const departures = departuresFromEntur.length ? departuresFromEntur : nextDepartures(meta.intervalMinutes, 6, now);
   const reachable = departures.find((departure) => {
     const minutesUntil = Math.floor((departure.getTime() - now.getTime()) / 60_000);
-    return minutesUntil >= neededMinutes;
+    return minutesUntil - neededMinutes >= -3;
   }) || departures[departures.length - 1];
 
   const minutesUntilDeparture = Math.floor((reachable.getTime() - now.getTime()) / 60_000);
@@ -329,7 +329,6 @@ function buildDecision(route, drive, enturSchedule = {}, now = new Date()) {
     crossingMinutes: enturSchedule.crossingMinutes || meta.crossingMinutes,
     timetableSource: departuresFromEntur.length ? "entur" : "estimated",
     drive,
-    queueMinutes,
     bufferMinutes,
     marginMinutes,
     confidence,
@@ -339,12 +338,6 @@ function buildDecision(route, drive, enturSchedule = {}, now = new Date()) {
         ? "Kjør nå, men planlegg for neste avgang."
         : "Kjør med normal fart og hold marginen."
   };
-}
-
-function estimateQueueMinutes(trafficDelayMinutes, priority) {
-  const liveDelay = Math.max(0, trafficDelayMinutes || 0);
-  const terminalLoad = priority === 1 ? 3 : priority === 2 ? 2 : 1;
-  return Math.min(25, Math.ceil(liveDelay * 0.65 + terminalLoad));
 }
 
 async function fetchEnturDepartures(quayId, lineId) {
