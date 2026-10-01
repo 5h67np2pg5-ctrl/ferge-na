@@ -30,149 +30,7 @@ const contentTypes = {
   ".ico": "image/x-icon"
 };
 
-const terminals = [
-  {
-    id: "halhjem",
-    name: "Halhjem ferjekai",
-    routeId: "halhjem-sandvikvag",
-    routeName: "Halhjem-Sandvikvåg",
-    sideName: "Halhjem",
-    oppositeSideName: "Sandvikvåg",
-    lat: 60.14338,
-    lon: 5.43355,
-    priority: 1
-  },
-  {
-    id: "sandvikvag",
-    name: "Sandvikvåg ferjekai",
-    routeId: "halhjem-sandvikvag",
-    routeName: "Halhjem-Sandvikvåg",
-    sideName: "Sandvikvåg",
-    oppositeSideName: "Halhjem",
-    lat: 59.93059,
-    lon: 5.41956,
-    priority: 1
-  },
-  {
-    id: "hatvik",
-    name: "Hatvik ferjekai",
-    routeId: "hatvik-venjaneset",
-    routeName: "Hatvik-Venjaneset",
-    sideName: "Hatvik",
-    oppositeSideName: "Venjaneset",
-    lat: 60.209,
-    lon: 5.537,
-    priority: 1
-  },
-  {
-    id: "venjaneset",
-    name: "Venjaneset ferjekai",
-    routeId: "hatvik-venjaneset",
-    routeName: "Hatvik-Venjaneset",
-    sideName: "Venjaneset",
-    oppositeSideName: "Hatvik",
-    lat: 60.20559,
-    lon: 5.59345,
-    priority: 1
-  },
-  {
-    id: "lavik",
-    name: "Lavik ferjekai",
-    routeId: "lavik-oppedal",
-    routeName: "Lavik-Oppedal",
-    sideName: "Lavik",
-    oppositeSideName: "Oppedal",
-    lat: 61.1042,
-    lon: 5.5146,
-    priority: 2
-  },
-  {
-    id: "oppedal",
-    name: "Oppedal ferjekai",
-    routeId: "lavik-oppedal",
-    routeName: "Lavik-Oppedal",
-    sideName: "Oppedal",
-    oppositeSideName: "Lavik",
-    lat: 61.08642,
-    lon: 5.46064,
-    priority: 2
-  },
-  {
-    id: "mortavika",
-    name: "Mortavika ferjekai",
-    routeId: "mortavika-arsvagen",
-    routeName: "Mortavika-Arsvågen",
-    sideName: "Mortavika",
-    oppositeSideName: "Arsvågen",
-    lat: 59.06608,
-    lon: 5.58846,
-    priority: 1
-  },
-  {
-    id: "arsvagen",
-    name: "Arsvågen ferjekai",
-    routeId: "mortavika-arsvagen",
-    routeName: "Mortavika-Arsvågen",
-    sideName: "Arsvågen",
-    oppositeSideName: "Mortavika",
-    lat: 59.23252,
-    lon: 5.45922,
-    priority: 1
-  },
-  {
-    id: "bognes",
-    name: "Bognes ferjekai",
-    routeId: "bognes-skarberget",
-    routeName: "Bognes-Skarberget",
-    sideName: "Bognes",
-    oppositeSideName: "Skarberget",
-    lat: 68.22362,
-    lon: 16.09838,
-    priority: 3
-  },
-  {
-    id: "skarberget",
-    name: "Skarberget ferjekai",
-    routeId: "bognes-skarberget",
-    routeName: "Bognes-Skarberget",
-    sideName: "Skarberget",
-    oppositeSideName: "Bognes",
-    lat: 68.19617,
-    lon: 16.27765,
-    priority: 3
-  },
-  {
-    id: "moss",
-    name: "Moss ferjekai",
-    routeId: "moss-horten",
-    routeName: "Moss-Horten",
-    sideName: "Moss",
-    oppositeSideName: "Horten",
-    lat: 59.43364,
-    lon: 10.65814,
-    priority: 1
-  },
-  {
-    id: "horten",
-    name: "Horten ferjekai",
-    routeId: "moss-horten",
-    routeName: "Moss-Horten",
-    sideName: "Horten",
-    oppositeSideName: "Moss",
-    lat: 59.4147,
-    lon: 10.48501,
-    priority: 1
-  }
-];
-
-const routeMeta = {
-  "halhjem-sandvikvag": { intervalMinutes: 30, crossingMinutes: 45 },
-  "hatvik-venjaneset": { intervalMinutes: 20, crossingMinutes: 12 },
-  "lavik-oppedal": { intervalMinutes: 20, crossingMinutes: 20 },
-  "mortavika-arsvagen": { intervalMinutes: 30, crossingMinutes: 24 },
-  "bognes-skarberget": { intervalMinutes: 45, crossingMinutes: 25 },
-  "moss-horten": { intervalMinutes: 30, crossingMinutes: 30 }
-};
+const routeMeta = {};
 
 let enturFerryCache = {
   fetchedAt: 0,
@@ -552,8 +410,21 @@ async function getNearby(req, res, url) {
   const travelMode = parseTravelMode(url.searchParams);
 
   const entur = await getEnturWaterRoutes();
-  const sourceRoutes = (entur.routes.length ? entur.routes : getCuratedFallbackRoutes())
-    .filter((route) => routeSupportsTravelMode(route, travelMode));
+  if (!entur.routes.length) {
+    return sendJson(res, 503, {
+      error: "Kunne ikke hente autoritative fergedata fra Entur.",
+      source: "entur-unavailable",
+      entur: {
+        routeCount: 0,
+        fetchedAt: entur.fetchedAt ? new Date(entur.fetchedAt).toISOString() : null,
+        error: entur.error
+      },
+      travelMode,
+      routes: []
+    });
+  }
+
+  const sourceRoutes = entur.routes.filter((route) => routeSupportsTravelMode(route, travelMode));
   const byRoute = new Map();
   const originToDestinationKm = destination ? distanceKm(origin, destination) : null;
 
@@ -605,24 +476,12 @@ async function getNearby(req, res, url) {
     }
   }
 
-  let nearby = [...byRoute.values()]
+  const nearby = [...byRoute.values()]
     .sort((a, b) => a.relevanceScore - b.relevanceScore)
     .slice(0, Number(url.searchParams.get("limit") || 10));
 
-  if (!nearby.length && !destination) {
-    nearby = getCuratedFallbackRoutes()
-      .filter((route) => routeSupportsTravelMode(route, travelMode))
-      .map((terminal) => ({
-        ...terminal,
-        distanceKm: Math.round(distanceKm(origin, terminal) * 10) / 10,
-        relevanceScore: distanceKm(origin, terminal)
-      }))
-      .sort((a, b) => a.relevanceScore - b.relevanceScore)
-      .slice(0, Number(url.searchParams.get("limit") || 10));
-  }
-
   sendJson(res, 200, {
-    source: entur.routes.length ? "entur-authoritative" : "curated-fallback",
+    source: "entur-authoritative",
     entur: {
       routeCount: entur.routes.length,
       fetchedAt: entur.fetchedAt ? new Date(entur.fetchedAt).toISOString() : null,
@@ -681,13 +540,20 @@ async function getDecision(req, res, url) {
   const terminalId = url.searchParams.get("terminalId");
   const travelMode = parseTravelMode(url.searchParams);
   const entur = await getEnturWaterRoutes();
-  const sourceRoutes = (entur.routes.length ? entur.routes : getCuratedFallbackRoutes())
-    .filter((route) => routeSupportsTravelMode(route, travelMode));
+  if (!entur.routes.length) {
+    return sendJson(res, 503, { error: "Kunne ikke hente autoritative fergedata fra Entur." });
+  }
+
+  const sourceRoutes = entur.routes.filter((route) => routeSupportsTravelMode(route, travelMode));
   const selected =
     sourceRoutes.find((terminal) => terminal.id === terminalId) ||
     sourceRoutes
       .map((terminal) => ({ ...terminal, distanceKm: distanceKm(origin, terminal) }))
       .sort((a, b) => a.distanceKm - b.distanceKm)[0];
+
+  if (!selected) {
+    return sendJson(res, 404, { error: "Fant ingen fergestrekning for valgt reisemåte." });
+  }
 
   let drive = null;
   let routeError = null;
@@ -715,14 +581,6 @@ async function getDecision(req, res, url) {
     routeError,
     departureError
   });
-}
-
-function getCuratedFallbackRoutes() {
-  return terminals.map((terminal) => ({
-    ...terminal,
-    source: "curated-fallback",
-    transportSubmode: "localCarFerry"
-  }));
 }
 
 async function getAlerts(_req, res, url) {
