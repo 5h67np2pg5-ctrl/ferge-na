@@ -16,7 +16,10 @@ const ENTUR_FERRY_CACHE_TTL_MS = 60 * 60 * 1000;
 
 const jsonHeaders = {
   "content-type": "application/json; charset=utf-8",
-  "cache-control": "no-store"
+  "cache-control": "no-store",
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, OPTIONS",
+  "access-control-allow-headers": "content-type, ET-Client-Name"
 };
 
 const contentTypes = {

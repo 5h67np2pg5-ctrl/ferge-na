@@ -7,7 +7,11 @@ const state = {
   routes: []
 };
 
-const APP_VERSION = "v18";
+const APP_VERSION = "v19";
+const API_BASE =
+  window.location.hostname === "localhost" && window.location.port === "3000"
+    ? "http://localhost:3001"
+    : "";
 
 const elements = {
   locateButton: document.querySelector("#locateButton"),
@@ -378,7 +382,7 @@ function setLoading(text) {
 }
 
 async function fetchJson(url) {
-  const response = await fetch(url);
+  const response = await fetch(`${API_BASE}${url}`);
   if (!response.ok) throw new Error(`API-feil ${response.status}`);
   return response.json();
 }
