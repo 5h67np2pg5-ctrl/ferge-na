@@ -7,7 +7,7 @@ const state = {
   routes: []
 };
 
-const APP_VERSION = "v19";
+const APP_VERSION = "v21";
 const API_BASE =
   window.location.hostname === "localhost" && window.location.port === "3000"
     ? "http://localhost:3001"
@@ -21,11 +21,11 @@ const elements = {
   statusPill: document.querySelector("#statusPill"),
   updatedAt: document.querySelector("#updatedAt"),
   departureTime: document.querySelector("#departureTime"),
+  normalDriveTime: document.querySelector("#normalDriveTime"),
   margin: document.querySelector("#margin"),
   routeName: document.querySelector("#routeName"),
   recommendation: document.querySelector("#recommendation"),
   driveTime: document.querySelector("#driveTime"),
-  bufferTime: document.querySelector("#bufferTime"),
   crossingTime: document.querySelector("#crossingTime"),
   destinationInput: document.querySelector("#destinationInput"),
   destinationSuggestions: document.querySelector("#destinationSuggestions"),
@@ -144,9 +144,9 @@ async function updateDecisionSafe() {
       : "Ingen aktuell avgangskai";
     elements.recommendation.textContent = "Kunne ikke hente neste avgang akkurat nå, men sambandslisten er oppdatert.";
     elements.departureTime.textContent = "--:--";
+    elements.normalDriveTime.textContent = "--";
     elements.margin.textContent = "--";
     elements.driveTime.textContent = "--";
-    elements.bufferTime.textContent = "--";
     elements.crossingTime.textContent = "--";
   }
 }
@@ -163,11 +163,11 @@ function clearDecision() {
   elements.statusPill.textContent = "Ingen aktuell ferge";
   elements.statusPill.className = "status-pill low";
   elements.departureTime.textContent = "--:--";
+  elements.normalDriveTime.textContent = "--";
   elements.margin.textContent = "--";
   elements.routeName.textContent = "Ingen aktuell avgangskai";
   elements.recommendation.textContent = "Endre destinasjon, reisemåte eller posisjon.";
   elements.driveTime.textContent = "--";
-  elements.bufferTime.textContent = "--";
   elements.crossingTime.textContent = "--";
 }
 
@@ -190,11 +190,11 @@ async function updateDecision() {
     minute: "2-digit"
   });
   elements.departureTime.textContent = decision.departureLabel;
+  elements.normalDriveTime.textContent = `${decision.drive.normalMinutes} min`;
   elements.margin.textContent = `${decision.marginMinutes} min`;
   elements.routeName.textContent = `${decision.sideName} ferjekai`;
   elements.recommendation.textContent = decision.recommendation;
   elements.driveTime.textContent = `${decision.drive.durationMinutes} min`;
-  elements.bufferTime.textContent = `${decision.bufferMinutes} min`;
   elements.crossingTime.textContent = `${decision.crossingMinutes} min`;
 
   maybeNotify(decision);
