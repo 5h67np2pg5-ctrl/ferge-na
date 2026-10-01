@@ -7,7 +7,7 @@ const state = {
   routes: []
 };
 
-const APP_VERSION = "v21";
+const APP_VERSION = "v22";
 const API_BASE =
   window.location.hostname === "localhost" && window.location.port === "3000"
     ? "http://localhost:3001"
@@ -25,7 +25,6 @@ const elements = {
   margin: document.querySelector("#margin"),
   routeName: document.querySelector("#routeName"),
   recommendation: document.querySelector("#recommendation"),
-  driveTime: document.querySelector("#driveTime"),
   crossingTime: document.querySelector("#crossingTime"),
   destinationInput: document.querySelector("#destinationInput"),
   destinationSuggestions: document.querySelector("#destinationSuggestions"),
@@ -146,7 +145,6 @@ async function updateDecisionSafe() {
     elements.departureTime.textContent = "--:--";
     elements.normalDriveTime.textContent = "--";
     elements.margin.textContent = "--";
-    elements.driveTime.textContent = "--";
     elements.crossingTime.textContent = "--";
   }
 }
@@ -167,7 +165,6 @@ function clearDecision() {
   elements.margin.textContent = "--";
   elements.routeName.textContent = "Ingen aktuell avgangskai";
   elements.recommendation.textContent = "Endre destinasjon, reisemåte eller posisjon.";
-  elements.driveTime.textContent = "--";
   elements.crossingTime.textContent = "--";
 }
 
@@ -194,7 +191,6 @@ async function updateDecision() {
   elements.margin.textContent = `${decision.marginMinutes} min`;
   elements.routeName.textContent = `${decision.sideName} ferjekai`;
   elements.recommendation.textContent = decision.recommendation;
-  elements.driveTime.textContent = `${decision.drive.durationMinutes} min`;
   elements.crossingTime.textContent = `${decision.crossingMinutes} min`;
 
   maybeNotify(decision);

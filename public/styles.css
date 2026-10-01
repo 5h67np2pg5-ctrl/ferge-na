@@ -348,6 +348,10 @@ h1 {
   margin-top: 8px;
 }
 
+.metrics.single-metric {
+  grid-template-columns: 1fr;
+}
+
 .metrics strong {
   display: block;
   margin-top: 3px;
