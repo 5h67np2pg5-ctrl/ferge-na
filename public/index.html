@@ -50,7 +50,7 @@
             <strong id="normalDriveTime">--</strong>
           </div>
           <div>
-            <span class="label">Margin til avgang</span>
+            <span class="label">Ventetid til avgang</span>
             <strong id="margin">-- min</strong>
           </div>
         </div>
@@ -58,10 +58,18 @@
         <p id="recommendation">Del posisjon for å se aktuell avreiseside og om du rekker avgangen.</p>
       </section>
 
-      <section class="metrics single-metric" aria-label="Overfart">
+      <section class="metrics" aria-label="Reise videre">
         <article>
           <span>Overfart</span>
           <strong id="crossingTime">--</strong>
+        </article>
+        <article id="onwardMetric" hidden>
+          <span>Videre fra kai</span>
+          <strong id="onwardTime">--</strong>
+        </article>
+        <article id="totalMetric" hidden>
+          <span>Til destinasjon</span>
+          <strong id="totalTime">--</strong>
         </article>
       </section>
 

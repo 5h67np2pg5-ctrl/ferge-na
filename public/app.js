@@ -7,7 +7,7 @@ const state = {
   routes: []
 };
 
-const APP_VERSION = "v22";
+const APP_VERSION = "v23";
 const API_BASE =
   window.location.hostname === "localhost" && window.location.port === "3000"
     ? "http://localhost:3001"
@@ -26,6 +26,10 @@ const elements = {
   routeName: document.querySelector("#routeName"),
   recommendation: document.querySelector("#recommendation"),
   crossingTime: document.querySelector("#crossingTime"),
+  onwardMetric: document.querySelector("#onwardMetric"),
+  onwardTime: document.querySelector("#onwardTime"),
+  totalMetric: document.querySelector("#totalMetric"),
+  totalTime: document.querySelector("#totalTime"),
   destinationInput: document.querySelector("#destinationInput"),
   destinationSuggestions: document.querySelector("#destinationSuggestions"),
   noticeStack: document.querySelector("#noticeStack"),
@@ -146,6 +150,7 @@ async function updateDecisionSafe() {
     elements.normalDriveTime.textContent = "--";
     elements.margin.textContent = "--";
     elements.crossingTime.textContent = "--";
+    renderDestinationMetrics(null);
   }
 }
 
@@ -166,6 +171,7 @@ function clearDecision() {
   elements.routeName.textContent = "Ingen aktuell avgangskai";
   elements.recommendation.textContent = "Endre destinasjon, reisemåte eller posisjon.";
   elements.crossingTime.textContent = "--";
+  renderDestinationMetrics(null);
 }
 
 async function updateDecision() {
@@ -175,6 +181,7 @@ async function updateDecision() {
     terminalId: state.selectedTerminalId || "",
     travelMode: state.travelMode
   });
+  appendDestinationParams(query);
 
   const payload = await fetchJson(`/api/decision?${query}`);
   const decision = payload.decision;
@@ -188,10 +195,11 @@ async function updateDecision() {
   });
   elements.departureTime.textContent = decision.departureLabel;
   elements.normalDriveTime.textContent = `${decision.drive.normalMinutes} min`;
-  elements.margin.textContent = `${decision.marginMinutes} min`;
+  elements.margin.textContent = formatMinutes(decision.minutesUntilDeparture);
   elements.routeName.textContent = `${decision.sideName} ferjekai`;
   elements.recommendation.textContent = decision.recommendation;
   elements.crossingTime.textContent = `${decision.crossingMinutes} min`;
+  renderDestinationMetrics(decision.destinationSummary);
 
   maybeNotify(decision);
 }
@@ -210,10 +218,26 @@ async function fetchNearbyRoutes(useDestination) {
 async function updateAlerts() {
   const query = new URLSearchParams({
     lat: String(state.position.lat),
-    lon: String(state.position.lon)
+    lon: String(state.position.lon),
+    terminalId: state.selectedTerminalId || "",
+    travelMode: state.travelMode
   });
+  appendDestinationParams(query);
   const payload = await fetchJson(`/api/alerts?${query}`);
   renderAlerts(payload.alerts || []);
+}
+
+function renderDestinationMetrics(summary) {
+  const hasSummary = Boolean(summary);
+  elements.onwardMetric.hidden = !hasSummary;
+  elements.totalMetric.hidden = !hasSummary;
+  elements.onwardTime.textContent = hasSummary ? formatMinutes(summary.onwardDrive.normalMinutes) : "--";
+  elements.totalTime.textContent = hasSummary ? formatMinutes(summary.totalNormalMinutes) : "--";
+}
+
+function formatMinutes(value) {
+  if (!Number.isFinite(value)) return "--";
+  return `${Math.max(0, Math.round(value))} min`;
 }
 
 function renderRoutes(errorMessage = "") {

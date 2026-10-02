@@ -305,7 +305,7 @@ function fallbackDrive(origin, destination) {
   };
 }
 
-function buildDecision(route, drive, enturSchedule = {}, now = new Date()) {
+function buildDecision(route, drive, enturSchedule = {}, now = new Date(), destinationSummary = null) {
   const meta = routeMeta[route.routeId] || { intervalMinutes: 30, crossingMinutes: 25 };
   const bufferMinutes = Math.max(2, Math.min(12, Math.ceil(drive.durationMinutes * 0.12)));
   const neededMinutes = drive.durationMinutes + bufferMinutes;
@@ -319,6 +319,10 @@ function buildDecision(route, drive, enturSchedule = {}, now = new Date()) {
   const minutesUntilDeparture = Math.floor((reachable.getTime() - now.getTime()) / 60_000);
   const marginMinutes = minutesUntilDeparture - neededMinutes;
   const confidence = marginMinutes >= 8 ? "high" : marginMinutes >= 3 ? "medium" : "low";
+  const crossingMinutes = enturSchedule.crossingMinutes || meta.crossingMinutes;
+  const destinationText = destinationSummary
+    ? `Til destinasjon: ${drive.normalMinutes} min til kai + ${crossingMinutes} min overfart + ${destinationSummary.onwardDrive.normalMinutes} min videre = ${destinationSummary.totalNormalMinutes} min.`
+    : null;
 
   return {
     now: now.toISOString(),
@@ -329,17 +333,20 @@ function buildDecision(route, drive, enturSchedule = {}, now = new Date()) {
     sideName: route.sideName,
     departureTime: reachable.toISOString(),
     departureLabel: reachable.toLocaleTimeString("no-NO", { hour: "2-digit", minute: "2-digit" }),
-    crossingMinutes: enturSchedule.crossingMinutes || meta.crossingMinutes,
+    minutesUntilDeparture,
+    crossingMinutes,
     timetableSource: departuresFromEntur.length ? "entur" : "estimated",
     drive,
     bufferMinutes,
     marginMinutes,
+    destinationSummary,
     confidence,
     status: confidence === "high" ? "Rekker trolig" : confidence === "medium" ? "Mulig, liten margin" : "Usikkert",
     recommendation:
-      confidence === "low"
+      destinationText ||
+      (confidence === "low"
         ? "Kjør nå, men planlegg for neste avgang."
-        : "Kjør med normal fart og hold marginen."
+        : "Kjør med normal fart og hold marginen.")
   };
 }
 
@@ -535,6 +542,7 @@ async function getDecision(req, res, url) {
 
   const terminalId = url.searchParams.get("terminalId");
   const travelMode = parseTravelMode(url.searchParams);
+  const destination = parseOptionalDestination(url.searchParams);
   const entur = await getEnturWaterRoutes();
   if (!entur.routes.length) {
     return sendJson(res, 503, { error: "Kunne ikke hente autoritative fergedata fra Entur." });
@@ -572,18 +580,195 @@ async function getDecision(req, res, url) {
     }
   }
 
+  const crossingMinutes = enturSchedule.crossingMinutes || (routeMeta[selected.routeId] || {}).crossingMinutes || 25;
+  const destinationSummary = destination
+    ? await buildDestinationSummary(origin, destination, selected, drive, crossingMinutes)
+    : null;
+
   sendJson(res, 200, {
-    decision: buildDecision(selected, drive, enturSchedule),
+    decision: buildDecision(selected, drive, enturSchedule, new Date(), destinationSummary),
     routeError,
     departureError
   });
+}
+
+async function buildDestinationSummary(origin, destination, selected, driveToFerry, crossingMinutes) {
+  const arrivalMetrics = bestArrivalSideMetrics(origin, destination, selected);
+  const arrivalQuay = arrivalMetrics?.quay;
+  if (!arrivalQuay) return null;
+
+  let onwardDrive = null;
+  try {
+    onwardDrive = await getGoogleRoute(arrivalQuay, destination);
+  } catch {
+    onwardDrive = null;
+  }
+  if (!onwardDrive) onwardDrive = fallbackDrive(arrivalQuay, destination);
+
+  return {
+    arrivalSideName: stripKaiSuffix(arrivalQuay.name),
+    onwardDrive,
+    totalTravelMinutes: driveToFerry.durationMinutes + crossingMinutes + onwardDrive.durationMinutes,
+    totalNormalMinutes: driveToFerry.normalMinutes + crossingMinutes + onwardDrive.normalMinutes
+  };
 }
 
 async function getAlerts(_req, res, url) {
   const origin = parseLatLon(url.searchParams);
   if (!origin) return badRequest(res, "Mangler gyldig lat/lon.");
 
-  sendJson(res, 200, { alerts: [] });
+  const destination = parseOptionalDestination(url.searchParams);
+  const terminalId = url.searchParams.get("terminalId");
+  const travelMode = parseTravelMode(url.searchParams);
+  const alerts = [];
+
+  try {
+    const entur = await getEnturWaterRoutes();
+    const sourceRoutes = entur.routes.filter((route) => routeSupportsTravelMode(route, travelMode));
+    const selected =
+      sourceRoutes.find((terminal) => terminal.id === terminalId) ||
+      sourceRoutes
+        .map((terminal) => ({ ...terminal, distanceKm: distanceKm(origin, terminal) }))
+        .sort((a, b) => a.distanceKm - b.distanceKm)[0];
+
+    if (selected) {
+      alerts.push(...await getRoadMessagesForLeg(origin, selected, "Til fergekaien"));
+    }
+
+    if (selected && destination) {
+      const arrivalMetrics = bestArrivalSideMetrics(origin, destination, selected);
+      if (arrivalMetrics?.quay) {
+        alerts.push(...await getRoadMessagesForLeg(arrivalMetrics.quay, destination, "Fra ankomstkai"));
+      }
+    }
+  } catch (error) {
+    alerts.push({
+      level: "muted",
+      title: "Vegmeldinger utilgjengelig",
+      detail: "Kunne ikke hente Statens vegvesen sine rutedata for vegarbeid eller kolonnekjøring akkurat nå."
+    });
+  }
+
+  sendJson(res, 200, { alerts: dedupeAlerts(alerts).slice(0, 4) });
+}
+
+async function getRoadMessagesForLeg(origin, destination, legLabel) {
+  const messages = await fetchVegvesenRouteMessages(origin, destination);
+  return messages.map((message) => ({
+    level: message.level,
+    title: `${legLabel}: ${message.title}`,
+    detail: message.detail
+  }));
+}
+
+async function fetchVegvesenRouteMessages(origin, destination) {
+  const from = wgs84ToUtm33(origin.lat, origin.lon);
+  const to = wgs84ToUtm33(destination.lat, destination.lon);
+  const routingUrl = new URL("https://www.vegvesen.no/ws/no/vegvesen/ruteplan/routingService_v1_0/routingService");
+  routingUrl.searchParams.set("format", "json");
+  routingUrl.searchParams.set("lang", "nb-NO");
+  routingUrl.searchParams.set("returnDirections", "true");
+  routingUrl.searchParams.set("returnGeometry", "false");
+  routingUrl.searchParams.set("avoidRoadsTemporaryClosed", "false");
+  routingUrl.searchParams.set("stops", `${from.easting},${from.northing};${to.easting},${to.northing}`);
+
+  const response = await fetch(routingUrl);
+  if (!response.ok) throw new Error(`Vegvesen rute ${response.status}`);
+  const payload = await response.json();
+  return extractRoadMessages(payload).filter(isRelevantRoadMessage).slice(0, 4);
+}
+
+function extractRoadMessages(value, messages = []) {
+  if (!value || typeof value !== "object") return messages;
+  if (Array.isArray(value)) {
+    for (const item of value) extractRoadMessages(item, messages);
+    return messages;
+  }
+
+  const type = String(value.AttributeType || value.attributeType || value.type || "");
+  const text = JSON.stringify(value);
+  if (/vegloggen|datex|trafikkmelding|kolonnekj/i.test(type + text)) {
+    const values = collectAttributeValues(value);
+    const heading = values.heading || values.HEADING || values.LOCATION_DESCRIPTION || values.DESCRIPTION || "Vegmelding";
+    const ingress = values.ingress || values.DESCRIPTION || values.RESTRICTION_DESCRIPTION || values.MESSAGE_TYPE || type;
+    messages.push({
+      level: /kolonnekj|stengt|closed|vegarbeid|roadwork/i.test(`${type} ${ingress}`) ? "warning" : "info",
+      title: normalizeName(String(heading)).slice(0, 90),
+      detail: normalizeName(String(ingress)).slice(0, 180)
+    });
+  }
+
+  for (const item of Object.values(value)) extractRoadMessages(item, messages);
+  return messages;
+}
+
+function collectAttributeValues(value, result = {}) {
+  if (!value || typeof value !== "object") return result;
+  if (Array.isArray(value)) {
+    for (const item of value) collectAttributeValues(item, result);
+    return result;
+  }
+  if (value.key && value.value) result[value.key] = value.value;
+  if (value.Key && value.Value) result[value.Key] = value.Value;
+  for (const item of Object.values(value)) collectAttributeValues(item, result);
+  return result;
+}
+
+function isRelevantRoadMessage(message) {
+  const value = `${message.title} ${message.detail}`;
+  return /vegarbeid|veg arbeid|roadwork|maintenance|kolonnekj|stengt|redusert framkommelighet|midlertidig/i.test(value);
+}
+
+function dedupeAlerts(alerts) {
+  const seen = new Set();
+  return alerts.filter((alert) => {
+    const key = `${alert.title}:${alert.detail}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function wgs84ToUtm33(lat, lon) {
+  const a = 6378137;
+  const f = 1 / 298.257223563;
+  const k0 = 0.9996;
+  const e = Math.sqrt(f * (2 - f));
+  const e2 = e * e;
+  const ep2 = e2 / (1 - e2);
+  const latRad = toRad(lat);
+  const lonRad = toRad(lon);
+  const lonOrigin = toRad(15);
+  const n = a / Math.sqrt(1 - e2 * Math.sin(latRad) ** 2);
+  const t = Math.tan(latRad) ** 2;
+  const c = ep2 * Math.cos(latRad) ** 2;
+  const A = Math.cos(latRad) * (lonRad - lonOrigin);
+  const m = a * (
+    (1 - e2 / 4 - (3 * e2 ** 2) / 64 - (5 * e2 ** 3) / 256) * latRad -
+    ((3 * e2) / 8 + (3 * e2 ** 2) / 32 + (45 * e2 ** 3) / 1024) * Math.sin(2 * latRad) +
+    ((15 * e2 ** 2) / 256 + (45 * e2 ** 3) / 1024) * Math.sin(4 * latRad) -
+    ((35 * e2 ** 3) / 3072) * Math.sin(6 * latRad)
+  );
+
+  const easting = k0 * n * (
+    A +
+    ((1 - t + c) * A ** 3) / 6 +
+    ((5 - 18 * t + t ** 2 + 72 * c - 58 * ep2) * A ** 5) / 120
+  ) + 500000;
+
+  const northing = k0 * (
+    m +
+    n * Math.tan(latRad) * (
+      (A ** 2) / 2 +
+      ((5 - t + 9 * c + 4 * c ** 2) * A ** 4) / 24 +
+      ((61 - 58 * t + t ** 2 + 600 * c - 330 * ep2) * A ** 6) / 720
+    )
+  );
+
+  return {
+    easting: Math.round(easting * 10) / 10,
+    northing: Math.round(northing * 10) / 10
+  };
 }
 
 async function getPlaces(_req, res, url) {
