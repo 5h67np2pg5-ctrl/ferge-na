@@ -318,6 +318,7 @@ function buildDecision(route, drive, enturSchedule = {}, now = new Date(), desti
   }) || departures[departures.length - 1];
 
   const minutesUntilDeparture = Math.floor((reachable.getTime() - now.getTime()) / 60_000);
+  const quayWaitMinutes = Math.max(0, minutesUntilDeparture - drive.normalMinutes);
   const marginMinutes = minutesUntilDeparture - neededMinutes;
   const confidence = marginMinutes >= 8 ? "high" : marginMinutes >= 3 ? "medium" : "low";
   const crossingMinutes = enturSchedule.crossingMinutes || meta.crossingMinutes;
@@ -335,6 +336,7 @@ function buildDecision(route, drive, enturSchedule = {}, now = new Date(), desti
     departureTime: reachable.toISOString(),
     departureLabel: reachable.toLocaleTimeString("no-NO", { hour: "2-digit", minute: "2-digit" }),
     minutesUntilDeparture,
+    quayWaitMinutes,
     crossingMinutes,
     timetableSource: departuresFromEntur.length ? "entur" : "estimated",
     drive,

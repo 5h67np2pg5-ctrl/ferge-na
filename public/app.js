@@ -7,7 +7,7 @@ const state = {
   routes: []
 };
 
-const APP_VERSION = "v23";
+const APP_VERSION = "v24";
 const API_BASE =
   window.location.hostname === "localhost" && window.location.port === "3000"
     ? "http://localhost:3001"
@@ -195,7 +195,7 @@ async function updateDecision() {
   });
   elements.departureTime.textContent = decision.departureLabel;
   elements.normalDriveTime.textContent = `${decision.drive.normalMinutes} min`;
-  elements.margin.textContent = formatMinutes(decision.minutesUntilDeparture);
+  elements.margin.textContent = formatMinutes(decision.quayWaitMinutes);
   elements.routeName.textContent = `${decision.sideName} ferjekai`;
   elements.recommendation.textContent = decision.recommendation;
   elements.crossingTime.textContent = `${decision.crossingMinutes} min`;
