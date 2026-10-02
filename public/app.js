@@ -17,7 +17,7 @@ const state = {
   }
 };
 
-const APP_VERSION = "v32";
+const APP_VERSION = "v33";
 const API_BASE =
   window.location.hostname === "localhost" && window.location.port === "3000"
     ? "http://localhost:3002"
@@ -239,11 +239,11 @@ async function updateDecision() {
     minute: "2-digit"
   });
   elements.departureTime.textContent = decision.departureLabel;
-  elements.normalDriveTime.textContent = `${decision.drive.normalMinutes} min`;
+  elements.normalDriveTime.textContent = formatMinutes(decision.drive.normalMinutes);
   elements.margin.textContent = formatMinutes(decision.quayWaitMinutes);
   elements.routeName.textContent = `${decision.sideName} ferjekai`;
   elements.recommendation.textContent = decision.recommendation;
-  elements.crossingTime.textContent = `${decision.crossingMinutes} min`;
+  elements.crossingTime.textContent = formatMinutes(decision.crossingMinutes);
   renderDestinationMetrics(decision.destinationSummary);
   showMapButton();
 
@@ -287,7 +287,11 @@ function renderDestinationMetrics(summary) {
 
 function formatMinutes(value) {
   if (!Number.isFinite(value)) return "--";
-  return `${Math.max(0, Math.round(value))} min`;
+  const minutes = Math.max(0, Math.round(value));
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours} t ${rest} min` : `${hours} t`;
 }
 
 function showMapButton() {
@@ -808,7 +812,7 @@ function maybeNotify(decision) {
   if (decision.confidence !== "high" || decision.marginMinutes <= 5) {
     sessionStorage.setItem("last-notification", key);
     new Notification(`${decision.status}: ${decision.departureLabel}`, {
-      body: `${decision.routeName}: ${decision.marginMinutes} min margin. ${decision.recommendation}`,
+      body: `${decision.routeName}: ${formatMinutes(decision.marginMinutes)} margin. ${decision.recommendation}`,
       icon: "/icon.svg"
     });
   }
