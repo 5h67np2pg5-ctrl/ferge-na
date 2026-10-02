@@ -171,13 +171,14 @@ function isRelevantWaterLine(submode) {
   return [
     "localCarFerry",
     "localPassengerFerry",
-    "highSpeedPassengerService"
+    "highSpeedPassengerService",
+    "highSpeedVehicleService"
   ].includes(submode);
 }
 
 function routeSupportsTravelMode(route, travelMode) {
-  if (travelMode === "vehicle") return route.transportSubmode === "localCarFerry";
-  return ["localCarFerry", "localPassengerFerry", "highSpeedPassengerService"].includes(route.transportSubmode);
+  if (travelMode === "vehicle") return ["localCarFerry", "highSpeedVehicleService"].includes(route.transportSubmode);
+  return ["localCarFerry", "localPassengerFerry", "highSpeedPassengerService", "highSpeedVehicleService"].includes(route.transportSubmode);
 }
 
 function parseTravelMode(searchParams) {
