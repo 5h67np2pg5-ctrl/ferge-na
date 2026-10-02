@@ -1,10 +1,10 @@
 {
-  "name": "Ferge NÅ",
-  "short_name": "Ferge NÅ",
+  "name": "Fergetider",
+  "short_name": "Fergetider",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f7faf8",
-  "theme_color": "#0f3d3e",
+  "background_color": "#e9f4ff",
+  "theme_color": "#0b4f8a",
   "icons": [
     {
       "src": "/icon.svg",

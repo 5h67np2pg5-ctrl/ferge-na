@@ -7,10 +7,10 @@ const state = {
   routes: []
 };
 
-const APP_VERSION = "v25";
+const APP_VERSION = "v28";
 const API_BASE =
   window.location.hostname === "localhost" && window.location.port === "3000"
-    ? "http://localhost:3001"
+    ? "http://localhost:3002"
     : "";
 
 const elements = {
@@ -53,7 +53,7 @@ initialize();
 async function initialize() {
   seedDemo();
   renderTravelMode();
-  await setDemoPosition("Demo er aktiv. Trykk Bruk min posisjon for nøyaktig liste.");
+  await locate();
 }
 
 async function locate() {
@@ -272,15 +272,15 @@ function renderRoutes(errorMessage = "") {
     return;
   }
 
-  for (const route of state.routes) {
+  state.routes.forEach((route, index) => {
     const button = document.createElement("button");
     button.className = route.id === state.selectedTerminalId ? "route-card active" : "route-card";
     button.type = "button";
     button.setAttribute("aria-pressed", route.id === state.selectedTerminalId ? "true" : "false");
     button.innerHTML = `
       <span>
-        <strong>${escapeHtml(route.sideName)} ferjekai</strong>
-        <span>${escapeHtml(formatRouteDescriptor(route))} · ${escapeHtml(route.distanceKm)} km til avgangskai</span>
+        <strong>${escapeHtml(formatRouteTitle(route, index))}</strong>
+        <span>${escapeHtml(formatRouteMeta(route))}</span>
       </span>
       <em>${route.id === state.selectedTerminalId ? "Valgt" : "Velg"}</em>
     `;
@@ -292,7 +292,7 @@ function renderRoutes(errorMessage = "") {
       await updateAlertsSafe();
     });
     elements.routeList.append(button);
-  }
+  });
 }
 
 function renderRouteLoading() {
@@ -311,6 +311,19 @@ function getSelectedRoute() {
 function formatRouteDescriptor(route) {
   const type = route.transportSubmode === "localCarFerry" ? "bilferge" : "hurtigbåt";
   return route.routeCode ? `${type} ${route.routeCode}` : type;
+}
+
+function formatRouteTitle(route, index) {
+  if (!state.destination) return `${route.sideName} ferjekai`;
+  return `${index + 1} ferge: ${route.ferryLegLabel || `${route.sideName}-${route.oppositeSideName}`}`;
+}
+
+function formatRouteMeta(route) {
+  const descriptor = formatRouteDescriptor(route);
+  if (!state.destination) return `${descriptor} · ${route.distanceKm} km til avgangskai`;
+  const total = Number.isFinite(route.totalRouteKm) ? ` · ${route.totalRouteKm} km total rute` : "";
+  const arrival = route.arrivalSideName ? ` · videre fra ${route.arrivalSideName}` : "";
+  return `${descriptor} · ${route.distanceKm} km til kai${arrival}${total}`;
 }
 
 async function setTravelMode(mode) {

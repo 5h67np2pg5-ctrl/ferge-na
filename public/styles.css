@@ -1,16 +1,18 @@
 :root {
   color-scheme: light;
-  --ink: #102322;
-  --muted: #5a6c69;
+  --ink: #0b2742;
+  --muted: #58728c;
   --surface: #ffffff;
-  --page: #f4f7f6;
-  --line: #dce6e2;
-  --brand: #0f3d3e;
-  --brand-2: #2f6f65;
-  --accent: #f2c94c;
-  --danger: #b63b2f;
-  --warn: #8a5a00;
-  --ok: #1f7a4d;
+  --surface-soft: rgba(255, 255, 255, 0.88);
+  --page: #e9f4ff;
+  --line: rgba(91, 142, 184, 0.24);
+  --brand: #0b4f8a;
+  --brand-2: #2879bd;
+  --accent: #d4aa54;
+  --danger: #b73e4a;
+  --warn: #8b6418;
+  --ok: #146f68;
+  --shadow: 0 18px 42px rgba(18, 73, 122, 0.13);
 }
 
 * {
@@ -20,7 +22,8 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--page);
+  background:
+    linear-gradient(180deg, #d8edff 0%, #eef7ff 42%, #f7fbff 100%);
   color: var(--ink);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
@@ -30,9 +33,36 @@ button {
 }
 
 .app-shell {
-  width: min(720px, 100%);
+  position: relative;
+  z-index: 0;
+  width: min(640px, 100%);
+  min-height: 100vh;
   margin: 0 auto;
-  padding: 12px 12px 28px;
+  padding: 16px 14px 30px;
+  overflow: hidden;
+}
+
+.app-shell::before {
+  content: "";
+  position: absolute;
+  z-index: -2;
+  inset: 0 0 auto;
+  height: 245px;
+  background:
+    linear-gradient(135deg, #083b75 0%, #0c5fa8 56%, #46a3dc 100%);
+}
+
+.app-shell::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 154px;
+  left: -12%;
+  width: 124%;
+  height: 112px;
+  background: #e9f4ff;
+  border-radius: 0 0 50% 50% / 0 0 100% 100%;
+  transform: rotate(-3deg);
 }
 
 [hidden] {
@@ -45,11 +75,12 @@ button {
   justify-content: space-between;
   gap: 16px;
   min-height: 60px;
+  color: #ffffff;
 }
 
 .eyebrow {
   margin: 0 0 4px;
-  color: var(--brand);
+  color: rgba(255, 255, 255, 0.78);
   font-size: 0.78rem;
   font-weight: 800;
   letter-spacing: 0;
@@ -72,20 +103,21 @@ h1 {
   place-items: center;
   width: 48px;
   height: 48px;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(255, 255, 255, 0.36);
   border-radius: 8px;
-  background: var(--surface);
-  color: var(--brand);
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
   font-size: 1.35rem;
+  backdrop-filter: blur(14px);
 }
 
 .hero-panel {
-  margin-top: 8px;
+  margin-top: 10px;
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #ffffff;
-  box-shadow: none;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: var(--shadow);
 }
 
 .quick-actions {
@@ -101,9 +133,10 @@ h1 {
   gap: 8px;
   margin-top: 8px;
   padding: 8px;
-  border: 2px solid var(--line);
+  border: 1px solid rgba(255, 255, 255, 0.36);
   border-radius: 8px;
-  background: var(--surface);
+  background: rgba(255, 255, 255, 0.93);
+  box-shadow: 0 10px 28px rgba(16, 72, 123, 0.08);
 }
 
 .mode-summary {
@@ -116,18 +149,18 @@ h1 {
 
 .mode-button {
   min-height: 52px;
-  border: 2px solid var(--line);
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: #fbfdfc;
+  background: #f7fbff;
   color: var(--muted);
   font-weight: 900;
 }
 
 .mode-button.active {
   border-color: var(--brand);
-  background: var(--brand);
+  background: linear-gradient(135deg, #0b4f8a, #1f7fc4);
   color: #fff;
-  box-shadow: 0 0 0 3px rgba(15, 61, 62, 0.14);
+  box-shadow: 0 0 0 3px rgba(34, 124, 190, 0.16);
 }
 
 .mode-button:focus-visible,
@@ -137,7 +170,7 @@ h1 {
 .icon-button:focus-visible,
 .suggestion-button:focus-visible,
 .destination-panel input:focus-visible {
-  outline: 3px solid rgba(47, 111, 101, 0.32);
+  outline: 3px solid rgba(35, 134, 200, 0.28);
   outline-offset: 2px;
 }
 
@@ -145,9 +178,10 @@ h1 {
   position: relative;
   margin-top: 8px;
   padding: 12px;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(255, 255, 255, 0.52);
   border-radius: 8px;
-  background: var(--surface);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 32px rgba(16, 72, 123, 0.1);
 }
 
 .destination-panel label {
@@ -164,7 +198,7 @@ h1 {
   padding: 0 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fbfdfc;
+  background: #f8fbff;
   color: var(--ink);
   font: inherit;
   font-weight: 750;
@@ -182,7 +216,7 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
-  box-shadow: 0 16px 34px rgba(16, 35, 34, 0.16);
+  box-shadow: 0 18px 40px rgba(18, 73, 122, 0.18);
 }
 
 .suggestions.visible {
@@ -202,7 +236,15 @@ h1 {
 }
 
 .suggestion-button:hover {
-  background: #f2f8f6;
+  background: #eef7ff;
+}
+
+.wave-divider {
+  height: 52px;
+  margin: 10px -14px -8px;
+  background:
+    radial-gradient(95% 66px at 50% -14px, rgba(255, 255, 255, 0) 62%, rgba(255, 255, 255, 0.76) 63%, rgba(255, 255, 255, 0) 67%),
+    linear-gradient(90deg, rgba(21, 105, 174, 0), rgba(45, 142, 205, 0.2), rgba(21, 105, 174, 0));
 }
 
 .suggestion-button:last-child {
@@ -234,18 +276,18 @@ h1 {
   min-height: 30px;
   padding: 5px 10px;
   border-radius: 999px;
-  background: #eef5f1;
+  background: #eaf5ff;
   color: var(--brand);
   font-weight: 800;
 }
 
 .status-pill.high {
-  background: #e9f7ef;
+  background: #e7f7f5;
   color: var(--ok);
 }
 
 .status-pill.medium {
-  background: #fff6d9;
+  background: #fff6df;
   color: var(--warn);
 }
 
@@ -267,7 +309,7 @@ h1 {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fbfdfc;
+  background: #f8fbff;
 }
 
 .label,
@@ -307,13 +349,14 @@ h1 {
 .primary-action {
   width: 100%;
   border: 0;
-  background: var(--brand);
+  background: linear-gradient(135deg, #0b4f8a, #2386c8);
   color: white;
+  box-shadow: 0 12px 30px rgba(11, 79, 138, 0.22);
 }
 
 .primary-action:hover,
 .mode-button.active:hover {
-  background: #0b3233;
+  background: linear-gradient(135deg, #083f72, #1472b4);
 }
 
 .primary-action:disabled {
@@ -329,7 +372,7 @@ h1 {
 
 .secondary-action.active {
   border-color: var(--brand);
-  background: #edf7f4;
+  background: #eaf5ff;
 }
 
 .icon-button:active,
@@ -371,7 +414,7 @@ h1 {
   border: 1px solid var(--line);
   border-left: 5px solid var(--brand-2);
   border-radius: 8px;
-  background: var(--surface);
+  background: rgba(255, 255, 255, 0.94);
 }
 
 .notice.warning {
@@ -416,7 +459,7 @@ h1 {
   padding: 13px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--surface);
+  background: rgba(255, 255, 255, 0.95);
   color: inherit;
   cursor: pointer;
   text-align: left;
@@ -424,7 +467,7 @@ h1 {
 
 .route-card.active {
   border-color: var(--brand);
-  background: #edf7f4;
+  background: #eaf5ff;
   box-shadow: inset 4px 0 0 var(--brand);
 }
 
@@ -453,7 +496,7 @@ h1 {
   min-height: 34px;
   padding: 0 10px;
   border-radius: 999px;
-  background: #eef5f1;
+  background: #eaf5ff;
   color: var(--brand);
   font-style: normal;
   font-weight: 900;
@@ -464,7 +507,7 @@ h1 {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--surface);
+  background: rgba(255, 255, 255, 0.94);
   color: var(--muted);
   font-weight: 800;
 }
@@ -472,6 +515,18 @@ h1 {
 @media (max-width: 430px) {
   .app-shell {
     padding-inline: 10px;
+  }
+
+  .app-shell::before {
+    height: 230px;
+  }
+
+  .app-shell::after {
+    top: 146px;
+  }
+
+  .wave-divider {
+    margin-inline: -10px;
   }
 
   .hero-panel {

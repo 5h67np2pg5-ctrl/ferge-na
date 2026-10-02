@@ -431,58 +431,11 @@ async function getNearby(req, res, url) {
   }
 
   const sourceRoutes = entur.routes.filter((route) => routeSupportsTravelMode(route, travelMode));
-  const byRoute = new Map();
-  const originToDestinationKm = destination ? distanceKm(origin, destination) : null;
+  const candidates = destination
+    ? buildDestinationCandidates(sourceRoutes, origin, destination)
+    : buildNearestCandidates(sourceRoutes, origin);
 
-  for (const terminal of sourceRoutes) {
-    const departureDistanceKm = distanceKm(origin, terminal);
-    const arrivalMetrics = destination ? bestArrivalSideMetrics(origin, destination, terminal) : null;
-    const arrivalDistanceKm = arrivalMetrics?.distanceKm ?? null;
-    const departureToDestinationKm = destination ? distanceKm(terminal, destination) : null;
-    const destinationGainKm =
-      destination && Number.isFinite(arrivalDistanceKm) && Number.isFinite(departureToDestinationKm)
-        ? departureToDestinationKm - arrivalDistanceKm
-        : null;
-
-    if (destination && Number.isFinite(destinationGainKm) && destinationGainKm <= 1) {
-      continue;
-    }
-
-    if (destination && !passesRouteProgression(origin, destination, terminal, arrivalMetrics)) {
-      continue;
-    }
-
-    const maxRelevantDepartureKm = destination
-      ? Math.max(15, originToDestinationKm * 1.25)
-      : Infinity;
-    if (destination && departureDistanceKm > maxRelevantDepartureKm) {
-      continue;
-    }
-
-    if (destination && Number.isFinite(originToDestinationKm) && Number.isFinite(arrivalDistanceKm)) {
-      const viaFerryKm = departureDistanceKm + arrivalDistanceKm;
-      const maxCorridorKm = Math.max(20, originToDestinationKm * 1.08);
-      if (viaFerryKm > maxCorridorKm) {
-        continue;
-      }
-    }
-
-    const candidate = {
-      ...terminal,
-      distanceKm: Math.round(departureDistanceKm * 10) / 10,
-      arrivalDistanceKm: Number.isFinite(arrivalDistanceKm) ? Math.round(arrivalDistanceKm * 10) / 10 : null,
-      destinationGainKm: Number.isFinite(destinationGainKm) ? Math.round(destinationGainKm * 10) / 10 : null,
-      relevanceScore: destination && Number.isFinite(arrivalDistanceKm)
-        ? departureDistanceKm + arrivalDistanceKm * 0.55
-        : departureDistanceKm
-    };
-    const current = byRoute.get(candidate.routeId);
-    if (!current || candidate.relevanceScore < current.relevanceScore) {
-      byRoute.set(candidate.routeId, candidate);
-    }
-  }
-
-  const nearby = [...byRoute.values()]
+  const nearby = candidates
     .sort((a, b) => a.relevanceScore - b.relevanceScore)
     .slice(0, Number(url.searchParams.get("limit") || 10));
 
@@ -496,6 +449,74 @@ async function getNearby(req, res, url) {
     travelMode,
     routes: nearby
   });
+}
+
+function buildNearestCandidates(sourceRoutes, origin) {
+  const byRoute = new Map();
+  for (const terminal of sourceRoutes) {
+    const departureDistanceKm = distanceKm(origin, terminal);
+    const candidate = {
+      ...terminal,
+      distanceKm: roundKm(departureDistanceKm),
+      arrivalDistanceKm: null,
+      destinationGainKm: null,
+      totalRouteKm: null,
+      ferryLegLabel: null,
+      relevanceScore: departureDistanceKm
+    };
+    const current = byRoute.get(candidate.routeId);
+    if (!current || candidate.relevanceScore < current.relevanceScore) {
+      byRoute.set(candidate.routeId, candidate);
+    }
+  }
+  return [...byRoute.values()];
+}
+
+function buildDestinationCandidates(sourceRoutes, origin, destination) {
+  const byRoute = new Map();
+  const nearestDepartureKm = Math.min(...sourceRoutes.map((route) => distanceKm(origin, route)));
+  const directKm = distanceKm(origin, destination);
+  const maxFirstDepartureKm = nearestDepartureKm + Math.max(18, Math.min(32, directKm * 0.45));
+
+  for (const departure of sourceRoutes) {
+    const bestArrival = bestArrivalSideMetrics(origin, destination, departure);
+    if (!bestArrival?.quay) continue;
+
+    const departureDistanceKm = distanceKm(origin, departure);
+    const arrivalDistanceKm = bestArrival.distanceKm;
+    const ferryLegKm = distanceKm(departure, bestArrival.quay);
+    const totalRouteKm = departureDistanceKm + ferryLegKm + arrivalDistanceKm;
+    const currentSideToDestinationKm = distanceKm(departure, destination);
+    const destinationGainKm = currentSideToDestinationKm - arrivalDistanceKm;
+    const progressDelta = bestArrival.progress - routeProgress(origin, destination, departure);
+
+    if (destinationGainKm <= 0.5) continue;
+    if (progressDelta <= 0.015 && directKm > 15) continue;
+    if (departureDistanceKm > maxFirstDepartureKm) continue;
+    if (departureDistanceKm > Math.max(35, directKm * 1.35)) continue;
+    if (totalRouteKm > Math.max(20, directKm * 1.75)) continue;
+
+    const candidate = {
+      ...departure,
+      distanceKm: roundKm(departureDistanceKm),
+      arrivalDistanceKm: roundKm(arrivalDistanceKm),
+      destinationGainKm: roundKm(destinationGainKm),
+      totalRouteKm: roundKm(totalRouteKm),
+      ferryLegKm: roundKm(ferryLegKm),
+      arrivalSideName: stripKaiSuffix(bestArrival.quay.name),
+      ferryLegLabel: `${stripKaiSuffix(departure.name)}-${stripKaiSuffix(bestArrival.quay.name)}`,
+      relevanceScore: totalRouteKm + arrivalDistanceKm * 0.25
+    };
+    const current = byRoute.get(candidate.routeId);
+    if (!current || candidate.relevanceScore < current.relevanceScore) {
+      byRoute.set(candidate.routeId, candidate);
+    }
+  }
+  return [...byRoute.values()];
+}
+
+function roundKm(value) {
+  return Math.round(value * 10) / 10;
 }
 
 function bestArrivalSideMetrics(origin, destination, terminal) {
@@ -635,12 +656,21 @@ async function getAlerts(_req, res, url) {
         .sort((a, b) => a.distanceKm - b.distanceKm)[0];
 
     if (selected) {
+      if (!GOOGLE_MAPS_API_KEY) {
+        alerts.push({
+          level: "muted",
+          title: "Google trafikk ikke aktivert",
+          detail: "Kjøretid vises som estimat. Legg inn Google Maps API-nøkkel for sanntidstrafikk og saktegående trafikk."
+        });
+      }
+      alerts.push(...await getGoogleTrafficAlertsForLeg(origin, selected, "Til fergekaien"));
       alerts.push(...await getRoadMessagesForLeg(origin, selected, "Til fergekaien"));
     }
 
     if (selected && destination) {
       const arrivalMetrics = bestArrivalSideMetrics(origin, destination, selected);
       if (arrivalMetrics?.quay) {
+        alerts.push(...await getGoogleTrafficAlertsForLeg(arrivalMetrics.quay, destination, "Fra ankomstkai"));
         alerts.push(...await getRoadMessagesForLeg(arrivalMetrics.quay, destination, "Fra ankomstkai"));
       }
     }
@@ -653,6 +683,21 @@ async function getAlerts(_req, res, url) {
   }
 
   sendJson(res, 200, { alerts: dedupeAlerts(alerts).slice(0, 4) });
+}
+
+async function getGoogleTrafficAlertsForLeg(origin, destination, legLabel) {
+  if (!GOOGLE_MAPS_API_KEY) return [];
+  try {
+    const drive = await getGoogleRoute(origin, destination);
+    if (!drive || drive.provider !== "google-routes" || drive.trafficDelayMinutes < 3) return [];
+    return [{
+      level: drive.trafficDelayMinutes >= 8 ? "warning" : "info",
+      title: `${legLabel}: saktegående trafikk`,
+      detail: `Google trafikkdata viser omtrent ${drive.trafficDelayMinutes} min forsinkelse på denne etappen.`
+    }];
+  } catch {
+    return [];
+  }
 }
 
 async function getRoadMessagesForLeg(origin, destination, legLabel) {
