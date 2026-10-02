@@ -7,7 +7,7 @@ const state = {
   routes: []
 };
 
-const APP_VERSION = "v24";
+const APP_VERSION = "v25";
 const API_BASE =
   window.location.hostname === "localhost" && window.location.port === "3000"
     ? "http://localhost:3001"
@@ -112,14 +112,19 @@ async function refresh() {
     elements.routeListTitle.textContent = destinationFiltered ? "Aktuelle samband" : "5 nærmeste samband";
     elements.sourceLabel.textContent = `${nearby.source === "entur-authoritative" ? "Entur" : "Ukjent"} · ${APP_VERSION}`;
 
-    if ((!state.selectedTerminalId || !state.routes.some((route) => route.id === state.selectedTerminalId)) && state.routes[0]) {
-      state.selectedTerminalId = state.routes[0].id;
+    if (state.selectedTerminalId && !state.routes.some((route) => route.id === state.selectedTerminalId)) {
+      state.selectedTerminalId = null;
     }
 
     renderRoutes();
     if (!state.routes.length) {
       clearDecision();
-      await updateAlertsSafe();
+      renderAlerts([]);
+      return;
+    }
+    if (!state.selectedTerminalId) {
+      promptForRouteSelection();
+      renderAlerts([]);
       return;
     }
     await updateDecisionSafe();
@@ -174,7 +179,20 @@ function clearDecision() {
   renderDestinationMetrics(null);
 }
 
+function promptForRouteSelection() {
+  elements.statusPill.textContent = "Velg samband";
+  elements.statusPill.className = "status-pill";
+  elements.departureTime.textContent = "--:--";
+  elements.normalDriveTime.textContent = "--";
+  elements.margin.textContent = "--";
+  elements.routeName.textContent = "Velg fergestrekning";
+  elements.recommendation.textContent = "Trykk på ønsket samband i listen for å hente neste avgang, kjøretid og overfart.";
+  elements.crossingTime.textContent = "--";
+  renderDestinationMetrics(null);
+}
+
 async function updateDecision() {
+  if (!state.selectedTerminalId) return;
   const query = new URLSearchParams({
     lat: String(state.position.lat),
     lon: String(state.position.lon),
@@ -216,6 +234,10 @@ async function fetchNearbyRoutes(useDestination) {
 }
 
 async function updateAlerts() {
+  if (!state.selectedTerminalId) {
+    renderAlerts([]);
+    return;
+  }
   const query = new URLSearchParams({
     lat: String(state.position.lat),
     lon: String(state.position.lon),
@@ -267,6 +289,7 @@ function renderRoutes(errorMessage = "") {
       state.selectedTerminalId = route.id;
       renderRoutes();
       await updateDecisionSafe();
+      await updateAlertsSafe();
     });
     elements.routeList.append(button);
   }
@@ -282,7 +305,7 @@ function renderRouteLoading() {
 }
 
 function getSelectedRoute() {
-  return state.routes.find((route) => route.id === state.selectedTerminalId) || state.routes[0] || null;
+  return state.routes.find((route) => route.id === state.selectedTerminalId) || null;
 }
 
 function formatRouteDescriptor(route) {
