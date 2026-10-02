@@ -103,7 +103,7 @@ button {
   display: grid;
   gap: 5px;
   color: rgba(255, 255, 255, 0.82);
-  font-size: clamp(0.86rem, 3.7vw, 1rem);
+  font-size: clamp(1.29rem, 5.55vw, 1.5rem);
   font-weight: 800;
 }
 
