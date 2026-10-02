@@ -10,6 +10,8 @@ npm run dev
 
 Åpne `http://localhost:3000`.
 
+Lokal `.env` leses automatisk hvis filen finnes.
+
 ## Miljøvariabler
 
 Appen fungerer med demo/fallback-data uten nøkler. For produksjon:
@@ -19,6 +21,8 @@ GOOGLE_MAPS_API_KEY=...
 ENTUR_CLIENT_NAME=ferge-na/0.1 kontakt@example.no
 PORT=3000
 ```
+
+På Railway skal samme `GOOGLE_MAPS_API_KEY` legges inn som miljøvariabel. Nøkkelen skal ikke ligge i Git.
 
 ## API-kilder
 

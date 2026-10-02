@@ -4,10 +4,14 @@ const state = {
   travelMode: "vehicle",
   destination: null,
   destinationSearchTimer: null,
-  routes: []
+  routes: [],
+  map: {
+    points: [],
+    zoom: 13
+  }
 };
 
-const APP_VERSION = "v29";
+const APP_VERSION = "v30";
 const API_BASE =
   window.location.hostname === "localhost" && window.location.port === "3000"
     ? "http://localhost:3002"
@@ -38,9 +42,11 @@ const elements = {
   sourceLabel: document.querySelector("#sourceLabel"),
   mapButton: document.querySelector("#mapButton"),
   mapSheet: document.querySelector("#mapSheet"),
-  mapFrame: document.querySelector("#mapFrame"),
+  mapCanvas: document.querySelector("#mapCanvas"),
   mapTitle: document.querySelector("#mapTitle"),
-  closeMapButton: document.querySelector("#closeMapButton")
+  closeMapButton: document.querySelector("#closeMapButton"),
+  zoomInButton: document.querySelector("#zoomInButton"),
+  zoomOutButton: document.querySelector("#zoomOutButton")
 };
 
 elements.locateButton.addEventListener("click", locate);
@@ -51,6 +57,11 @@ elements.destinationInput.addEventListener("focus", handleDestinationInput);
 elements.destinationInput.addEventListener("keydown", handleDestinationKeydown);
 elements.mapButton.addEventListener("click", showMap);
 elements.closeMapButton.addEventListener("click", closeMap);
+elements.zoomInButton.addEventListener("click", () => zoomMap(1));
+elements.zoomOutButton.addEventListener("click", () => zoomMap(-1));
+window.addEventListener("resize", () => {
+  if (!elements.mapSheet.hidden) renderMap();
+});
 document.addEventListener("pointerdown", closeSuggestionsOnOutsideClick);
 
 disableServiceWorkerCache();
@@ -289,25 +300,173 @@ function showMap() {
   elements.mapTitle.textContent = state.destination
     ? `${route.sideName} til ${state.destination.name || "destinasjon"}`
     : `Til ${route.sideName} ferjekai`;
-  elements.mapFrame.src = buildMapUrl(route);
+  state.map.points = buildMapPoints(route);
+  state.map.zoom = fitMapZoom(state.map.points);
   elements.mapSheet.hidden = false;
+  window.requestAnimationFrame(renderMap);
 }
 
 function closeMap() {
   elements.mapSheet.hidden = true;
-  elements.mapFrame.removeAttribute("src");
+  elements.mapCanvas.innerHTML = "";
 }
 
-function buildMapUrl(route) {
-  const origin = `${state.position.lat},${state.position.lon}`;
-  const stops = [`${route.lat},${route.lon}`];
+function buildMapPoints(route) {
+  const points = [
+    {
+      lat: state.position.lat,
+      lon: state.position.lon,
+      type: "vehicle",
+      label: "Kjøretøy"
+    },
+    {
+      lat: route.lat,
+      lon: route.lon,
+      type: "departure",
+      label: `${route.sideName} ferjekai`
+    }
+  ];
   if (state.destination) {
     if (Number.isFinite(route.arrivalLat) && Number.isFinite(route.arrivalLon)) {
-      stops.push(`${route.arrivalLat},${route.arrivalLon}`);
+      points.push({
+        lat: route.arrivalLat,
+        lon: route.arrivalLon,
+        type: "arrival",
+        label: `${route.arrivalSideName || route.oppositeSideName || "Ankomst"} ferjekai`
+      });
     }
-    stops.push(`${state.destination.lat},${state.destination.lon}`);
+    points.push({
+      lat: state.destination.lat,
+      lon: state.destination.lon,
+      type: "destination",
+      label: state.destination.name || "Destinasjon"
+    });
   }
-  return `https://maps.google.com/maps?saddr=${encodeURIComponent(origin)}&daddr=${encodeURIComponent(stops.join(" to:"))}&dirflg=d&output=embed`;
+  return points;
+}
+
+function zoomMap(delta) {
+  if (!state.map.points.length) return;
+  state.map.zoom = Math.max(5, Math.min(17, state.map.zoom + delta));
+  renderMap();
+}
+
+function fitMapZoom(points) {
+  if (points.length <= 1) return 14;
+  const width = Math.max(320, elements.mapCanvas.clientWidth || 360);
+  const height = Math.max(320, elements.mapCanvas.clientHeight || 420);
+  for (let zoom = 15; zoom >= 5; zoom -= 1) {
+    const projected = points.map((point) => projectPoint(point, zoom));
+    const bounds = getPixelBounds(projected);
+    if (bounds.width <= width - 86 && bounds.height <= height - 112) return zoom;
+  }
+  return 5;
+}
+
+function renderMap() {
+  const points = state.map.points;
+  if (!points.length) return;
+
+  const zoom = state.map.zoom;
+  const width = Math.max(320, elements.mapCanvas.clientWidth || 360);
+  const height = Math.max(320, elements.mapCanvas.clientHeight || 420);
+  const projected = points.map((point) => ({ ...point, pixel: projectPoint(point, zoom) }));
+  const bounds = getPixelBounds(projected.map((point) => point.pixel));
+  const center = {
+    x: bounds.minX + bounds.width / 2,
+    y: bounds.minY + bounds.height / 2
+  };
+  const topLeft = {
+    x: center.x - width / 2,
+    y: center.y - height / 2
+  };
+
+  elements.mapCanvas.innerHTML = "";
+  renderTiles(zoom, width, height, topLeft);
+  renderRouteOverlay(projected, width, height, topLeft);
+}
+
+function renderTiles(zoom, width, height, topLeft) {
+  const tileSize = 256;
+  const tileCount = 2 ** zoom;
+  const minTileX = Math.floor(topLeft.x / tileSize);
+  const maxTileX = Math.floor((topLeft.x + width) / tileSize);
+  const minTileY = Math.max(0, Math.floor(topLeft.y / tileSize));
+  const maxTileY = Math.min(tileCount - 1, Math.floor((topLeft.y + height) / tileSize));
+
+  for (let tileX = minTileX; tileX <= maxTileX; tileX += 1) {
+    for (let tileY = minTileY; tileY <= maxTileY; tileY += 1) {
+      const wrappedX = ((tileX % tileCount) + tileCount) % tileCount;
+      const tile = document.createElement("img");
+      tile.className = "map-tile";
+      tile.alt = "";
+      tile.draggable = false;
+      tile.src = `https://tile.openstreetmap.org/${zoom}/${wrappedX}/${tileY}.png`;
+      tile.style.left = `${Math.round(tileX * tileSize - topLeft.x)}px`;
+      tile.style.top = `${Math.round(tileY * tileSize - topLeft.y)}px`;
+      elements.mapCanvas.append(tile);
+    }
+  }
+}
+
+function renderRouteOverlay(points, width, height, topLeft) {
+  const screenPoints = points.map((point) => ({
+    ...point,
+    x: Math.round(point.pixel.x - topLeft.x),
+    y: Math.round(point.pixel.y - topLeft.y)
+  }));
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "map-route");
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("aria-hidden", "true");
+
+  const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+  polyline.setAttribute("points", screenPoints.map((point) => `${point.x},${point.y}`).join(" "));
+  polyline.setAttribute("fill", "none");
+  polyline.setAttribute("stroke", "#0b4f8a");
+  polyline.setAttribute("stroke-width", "5");
+  polyline.setAttribute("stroke-linecap", "round");
+  polyline.setAttribute("stroke-linejoin", "round");
+  svg.append(polyline);
+  elements.mapCanvas.append(svg);
+
+  screenPoints.forEach((point, index) => {
+    const marker = document.createElement("div");
+    marker.className = `map-marker ${point.type}`;
+    marker.style.left = `${point.x}px`;
+    marker.style.top = `${point.y}px`;
+    marker.innerHTML = `
+      <span>${point.type === "vehicle" ? "" : index}</span>
+      <strong>${escapeHtml(point.label)}</strong>
+    `;
+    elements.mapCanvas.append(marker);
+  });
+}
+
+function projectPoint(point, zoom) {
+  const tileSize = 256;
+  const scale = tileSize * 2 ** zoom;
+  const sinLat = Math.sin((Math.max(-85.05112878, Math.min(85.05112878, point.lat)) * Math.PI) / 180);
+  return {
+    x: ((point.lon + 180) / 360) * scale,
+    y: (0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * scale
+  };
+}
+
+function getPixelBounds(points) {
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  return {
+    minX,
+    minY,
+    width: Math.max(1, maxX - minX),
+    height: Math.max(1, maxY - minY)
+  };
 }
 
 function renderRoutes(errorMessage = "") {

@@ -93,7 +93,11 @@
           <strong id="mapTitle">Kart</strong>
           <button class="secondary-action" id="closeMapButton" type="button">Lukk kart</button>
         </div>
-        <iframe id="mapFrame" title="Kart over rute" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+        <div class="map-body" id="mapCanvas" role="img" aria-label="Kart over valgt rute"></div>
+        <div class="map-controls" aria-label="Zoom">
+          <button id="zoomInButton" type="button" aria-label="Zoom inn">+</button>
+          <button id="zoomOutButton" type="button" aria-label="Zoom ut">-</button>
+        </div>
       </div>
     </section>
 

@@ -1,12 +1,14 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const rootDir = normalize(join(__dirname, ".."));
 const publicDir = join(rootDir, "public");
+
+loadEnvFile(join(rootDir, ".env"));
 
 const PORT = Number(process.env.PORT || 3000);
 const ENTUR_CLIENT_NAME = process.env.ENTUR_CLIENT_NAME || "ferge-na-dev/0.1";
@@ -40,6 +42,21 @@ let enturFerryCache = {
   routes: [],
   error: null
 };
+
+function loadEnvFile(path) {
+  if (!existsSync(path)) return;
+  const lines = readFileSync(path, "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const separator = trimmed.indexOf("=");
+    if (separator === -1) continue;
+    const key = trimmed.slice(0, separator).trim();
+    const rawValue = trimmed.slice(separator + 1).trim();
+    if (!key || process.env[key] !== undefined) continue;
+    process.env[key] = rawValue.replace(/^["']|["']$/g, "");
+  }
+}
 
 function sendJson(res, status, payload) {
   res.writeHead(status, jsonHeaders);
