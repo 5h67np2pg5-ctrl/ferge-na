@@ -17,13 +17,16 @@ const state = {
   }
 };
 
-const APP_VERSION = "v34";
+const APP_VERSION = "v35";
 const API_BASE =
   window.location.hostname === "localhost" && window.location.port === "3000"
     ? "http://localhost:3002"
     : "";
 
 const elements = {
+  frontPage: document.querySelector("#frontPage"),
+  appShell: document.querySelector("#appShell"),
+  enterAppButton: document.querySelector("#enterAppButton"),
   locateButton: document.querySelector("#locateButton"),
   refreshButton: document.querySelector("#refreshButton"),
   modeButtons: [...document.querySelectorAll(".mode-button")],
@@ -55,6 +58,7 @@ const elements = {
   zoomOutButton: document.querySelector("#zoomOutButton")
 };
 
+elements.enterAppButton.addEventListener("click", enterApp);
 elements.locateButton.addEventListener("click", locate);
 elements.refreshButton.addEventListener("click", refresh);
 elements.modeButtons.forEach((button) => button.addEventListener("click", () => setTravelMode(button.dataset.mode)));
@@ -74,9 +78,15 @@ disableServiceWorkerCache();
 
 initialize();
 
-async function initialize() {
+function initialize() {
   seedDemo();
   renderTravelMode();
+  renderRouteLoading();
+}
+
+async function enterApp() {
+  elements.frontPage.hidden = true;
+  elements.appShell.hidden = false;
   await locate();
 }
 

@@ -69,6 +69,72 @@ button {
   display: none !important;
 }
 
+.front-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 28px 22px;
+  background: #0b4f8a;
+  color: #ffffff;
+}
+
+.front-content {
+  display: grid;
+  width: min(430px, 100%);
+  justify-items: center;
+  gap: 18px;
+  text-align: center;
+}
+
+.front-kicker {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.86rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.front-content h1 {
+  color: #ffffff;
+  font-size: clamp(2.85rem, 14vw, 4.7rem);
+  line-height: 0.94;
+}
+
+.front-languages {
+  display: grid;
+  gap: 5px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: clamp(0.86rem, 3.7vw, 1rem);
+  font-weight: 800;
+}
+
+.fingerprint-button {
+  display: grid;
+  width: 118px;
+  height: 118px;
+  margin-top: 18px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  box-shadow: 0 22px 44px rgba(0, 24, 48, 0.24);
+  touch-action: manipulation;
+}
+
+.fingerprint-button svg {
+  width: 64px;
+  height: 64px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.fingerprint-button:active {
+  transform: scale(0.98);
+}
+
 .topbar {
   display: flex;
   align-items: center;
