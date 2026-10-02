@@ -474,14 +474,15 @@ function buildNearestCandidates(sourceRoutes, origin) {
 
 function buildDestinationCandidates(sourceRoutes, origin, destination) {
   const byRoute = new Map();
-  const nearestDepartureKm = Math.min(...sourceRoutes.map((route) => distanceKm(origin, route)));
   const directKm = distanceKm(origin, destination);
-  const maxFirstDepartureKm = nearestDepartureKm + Math.max(18, Math.min(32, directKm * 0.45));
+  const maxCorridorKm = Math.max(12, Math.min(38, directKm * 0.22));
+  const maxFirstDepartureKm = Math.max(30, directKm * 0.65);
 
   for (const departure of sourceRoutes) {
     const bestArrival = bestArrivalSideMetrics(origin, destination, departure);
     if (!bestArrival?.quay) continue;
 
+    const departureCorridor = routeCorridorMetrics(origin, destination, departure);
     const departureDistanceKm = distanceKm(origin, departure);
     const arrivalDistanceKm = bestArrival.distanceKm;
     const ferryLegKm = distanceKm(departure, bestArrival.quay);
@@ -491,8 +492,10 @@ function buildDestinationCandidates(sourceRoutes, origin, destination) {
     const progressDelta = bestArrival.progress - routeProgress(origin, destination, departure);
 
     if (destinationGainKm <= 0.5) continue;
-    if (progressDelta <= 0.015 && directKm > 15) continue;
+    if (departureCorridor.progress < -0.04 || departureCorridor.progress > 1.05) continue;
+    if (departureCorridor.corridorKm > maxCorridorKm) continue;
     if (departureDistanceKm > maxFirstDepartureKm) continue;
+    if (progressDelta <= 0.015 && directKm > 15) continue;
     if (departureDistanceKm > Math.max(35, directKm * 1.35)) continue;
     if (totalRouteKm > Math.max(20, directKm * 1.75)) continue;
 
@@ -505,7 +508,7 @@ function buildDestinationCandidates(sourceRoutes, origin, destination) {
       ferryLegKm: roundKm(ferryLegKm),
       arrivalSideName: stripKaiSuffix(bestArrival.quay.name),
       ferryLegLabel: `${stripKaiSuffix(departure.name)}-${stripKaiSuffix(bestArrival.quay.name)}`,
-      relevanceScore: totalRouteKm + arrivalDistanceKm * 0.25
+      relevanceScore: totalRouteKm + arrivalDistanceKm * 0.25 + departureCorridor.corridorKm * 0.4
     };
     const current = byRoute.get(candidate.routeId);
     if (!current || candidate.relevanceScore < current.relevanceScore) {
@@ -513,6 +516,31 @@ function buildDestinationCandidates(sourceRoutes, origin, destination) {
     }
   }
   return [...byRoute.values()];
+}
+
+function routeCorridorMetrics(origin, destination, point) {
+  const lat0 = toRad((origin.lat + destination.lat) / 2);
+  const ox = origin.lon * Math.cos(lat0);
+  const oy = origin.lat;
+  const dx = destination.lon * Math.cos(lat0);
+  const dy = destination.lat;
+  const px = point.lon * Math.cos(lat0);
+  const py = point.lat;
+  const vx = dx - ox;
+  const vy = dy - oy;
+  const wx = px - ox;
+  const wy = py - oy;
+  const lengthSquared = vx * vx + vy * vy;
+  if (!lengthSquared) return { progress: 0, corridorKm: distanceKm(origin, point) };
+  const progress = (wx * vx + wy * vy) / lengthSquared;
+  const closest = {
+    lat: oy + vy * Math.max(0, Math.min(1, progress)),
+    lon: (ox + vx * Math.max(0, Math.min(1, progress))) / Math.cos(lat0)
+  };
+  return {
+    progress,
+    corridorKm: distanceKm(point, closest)
+  };
 }
 
 function roundKm(value) {
