@@ -636,9 +636,19 @@ h1 {
 }
 
 .map-marker.vehicle span {
+  position: relative;
   width: 32px;
   height: 32px;
   background: #0e9f6e;
+}
+
+.map-marker.vehicle span::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border: 2px solid rgba(14, 159, 110, 0.28);
+  border-radius: 999px;
+  animation: vehiclePulse 1.8s ease-out infinite;
 }
 
 .map-marker.vehicle span::before {
@@ -648,6 +658,19 @@ h1 {
   border-radius: 3px 3px 7px 7px;
   background: #ffffff;
   clip-path: polygon(50% 0, 100% 100%, 50% 76%, 0 100%);
+  transform: rotate(var(--vehicle-heading, 0deg));
+  transform-origin: center;
+}
+
+@keyframes vehiclePulse {
+  0% {
+    opacity: 0.85;
+    transform: scale(0.72);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.45);
+  }
 }
 
 .map-controls {

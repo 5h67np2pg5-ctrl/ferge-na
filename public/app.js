@@ -8,11 +8,16 @@ const state = {
   map: {
     points: [],
     path: [],
-    zoom: 13
+    zoom: 13,
+    watchId: null,
+    selectedRouteId: null,
+    lastPathOrigin: null,
+    routeUpdateInFlight: false,
+    followVehicle: true
   }
 };
 
-const APP_VERSION = "v31";
+const APP_VERSION = "v32";
 const API_BASE =
   window.location.hostname === "localhost" && window.location.port === "3000"
     ? "http://localhost:3002"
@@ -303,6 +308,9 @@ async function showMap() {
     : `Til ${route.sideName} ferjekai`;
   state.map.points = buildMapPoints(route);
   state.map.path = [];
+  state.map.selectedRouteId = route.id;
+  state.map.lastPathOrigin = { ...state.position };
+  state.map.followVehicle = true;
   elements.mapSheet.hidden = false;
   elements.mapCanvas.innerHTML = '<div class="map-loading">Henter vei...</div>';
 
@@ -313,14 +321,18 @@ async function showMap() {
     state.map.path = buildStraightMapPath();
   }
 
-  state.map.zoom = fitMapZoom(getMapBoundsPoints());
+  state.map.zoom = Math.max(13, fitMapZoom(getMapBoundsPoints()));
   window.requestAnimationFrame(renderMap);
+  startMapTracking();
 }
 
 function closeMap() {
   elements.mapSheet.hidden = true;
   elements.mapCanvas.innerHTML = "";
   state.map.path = [];
+  state.map.selectedRouteId = null;
+  state.map.lastPathOrigin = null;
+  stopMapTracking();
 }
 
 function buildMapPoints(route) {
@@ -329,7 +341,9 @@ function buildMapPoints(route) {
       lat: state.position.lat,
       lon: state.position.lon,
       type: "vehicle",
-      label: "Kjøretøy"
+      label: "Kjøretøy",
+      heading: null,
+      accuracy: null
     },
     {
       lat: route.lat,
@@ -355,6 +369,62 @@ function buildMapPoints(route) {
     });
   }
   return points;
+}
+
+function startMapTracking() {
+  if (!navigator.geolocation || state.map.watchId !== null) return;
+  state.map.watchId = navigator.geolocation.watchPosition(
+    (position) => {
+      const nextPosition = {
+        lat: position.coords.latitude,
+        lon: position.coords.longitude
+      };
+      state.position = nextPosition;
+      updateVehicleMarker({
+        ...nextPosition,
+        heading: Number.isFinite(position.coords.heading) ? position.coords.heading : null,
+        accuracy: Number.isFinite(position.coords.accuracy) ? Math.round(position.coords.accuracy) : null
+      });
+      maybeRefreshMapPath();
+      renderMap();
+    },
+    () => {},
+    { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+  );
+}
+
+function stopMapTracking() {
+  if (state.map.watchId === null || !navigator.geolocation) return;
+  navigator.geolocation.clearWatch(state.map.watchId);
+  state.map.watchId = null;
+}
+
+function updateVehicleMarker(position) {
+  const vehicle = state.map.points.find((point) => point.type === "vehicle");
+  if (!vehicle) return;
+  vehicle.lat = position.lat;
+  vehicle.lon = position.lon;
+  vehicle.heading = position.heading;
+  vehicle.accuracy = position.accuracy;
+}
+
+async function maybeRefreshMapPath() {
+  const route = getSelectedRoute();
+  if (!route || state.map.routeUpdateInFlight || elements.mapSheet.hidden) return;
+  const lastOrigin = state.map.lastPathOrigin;
+  if (lastOrigin && distanceKm(lastOrigin, state.position) < 0.12) return;
+
+  state.map.routeUpdateInFlight = true;
+  state.map.lastPathOrigin = { ...state.position };
+  try {
+    const path = await fetchMapPath(route);
+    state.map.path = path.length > 1 ? path : buildStraightMapPath();
+  } catch {
+    state.map.path = buildStraightMapPath();
+  } finally {
+    state.map.routeUpdateInFlight = false;
+    renderMap();
+  }
 }
 
 async function fetchMapPath(route) {
@@ -407,10 +477,13 @@ function renderMap() {
   const projectedPath = path.map((point) => ({ ...point, pixel: projectPoint(point, zoom) }));
   const projectedMarkers = markers.map((point) => ({ ...point, pixel: projectPoint(point, zoom) }));
   const bounds = getPixelBounds([...projectedPath, ...projectedMarkers].map((point) => point.pixel));
-  const center = {
-    x: bounds.minX + bounds.width / 2,
-    y: bounds.minY + bounds.height / 2
-  };
+  const vehicleMarker = projectedMarkers.find((point) => point.type === "vehicle");
+  const center = state.map.followVehicle && vehicleMarker
+    ? vehicleMarker.pixel
+    : {
+        x: bounds.minX + bounds.width / 2,
+        y: bounds.minY + bounds.height / 2
+      };
   const topLeft = {
     x: center.x - width / 2,
     y: center.y - height / 2
@@ -476,6 +549,9 @@ function renderRouteOverlay(path, markers, width, height, topLeft) {
     marker.className = `map-marker ${point.type}`;
     marker.style.left = `${point.x}px`;
     marker.style.top = `${point.y}px`;
+    if (point.type === "vehicle" && Number.isFinite(point.heading)) {
+      marker.style.setProperty("--vehicle-heading", `${point.heading}deg`);
+    }
     marker.innerHTML = `
       <span>${point.type === "vehicle" ? "" : index}</span>
       <strong>${escapeHtml(point.label)}</strong>
@@ -507,6 +583,22 @@ function getPixelBounds(points) {
     width: Math.max(1, maxX - minX),
     height: Math.max(1, maxY - minY)
   };
+}
+
+function distanceKm(a, b) {
+  const earthRadiusKm = 6371;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 2 * earthRadiusKm * Math.asin(Math.sqrt(h));
+}
+
+function toRad(value) {
+  return (value * Math.PI) / 180;
 }
 
 function renderRoutes(errorMessage = "") {
