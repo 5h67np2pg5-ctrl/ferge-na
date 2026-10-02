@@ -7,11 +7,12 @@ const state = {
   routes: [],
   map: {
     points: [],
+    path: [],
     zoom: 13
   }
 };
 
-const APP_VERSION = "v30";
+const APP_VERSION = "v31";
 const API_BASE =
   window.location.hostname === "localhost" && window.location.port === "3000"
     ? "http://localhost:3002"
@@ -293,7 +294,7 @@ function hideMapButton() {
   closeMap();
 }
 
-function showMap() {
+async function showMap() {
   const route = getSelectedRoute();
   if (!state.position || !route) return;
 
@@ -301,14 +302,25 @@ function showMap() {
     ? `${route.sideName} til ${state.destination.name || "destinasjon"}`
     : `Til ${route.sideName} ferjekai`;
   state.map.points = buildMapPoints(route);
-  state.map.zoom = fitMapZoom(state.map.points);
+  state.map.path = [];
   elements.mapSheet.hidden = false;
+  elements.mapCanvas.innerHTML = '<div class="map-loading">Henter vei...</div>';
+
+  try {
+    const path = await fetchMapPath(route);
+    state.map.path = path.length > 1 ? path : buildStraightMapPath();
+  } catch {
+    state.map.path = buildStraightMapPath();
+  }
+
+  state.map.zoom = fitMapZoom(getMapBoundsPoints());
   window.requestAnimationFrame(renderMap);
 }
 
 function closeMap() {
   elements.mapSheet.hidden = true;
   elements.mapCanvas.innerHTML = "";
+  state.map.path = [];
 }
 
 function buildMapPoints(route) {
@@ -345,6 +357,27 @@ function buildMapPoints(route) {
   return points;
 }
 
+async function fetchMapPath(route) {
+  const query = new URLSearchParams({
+    lat: String(state.position.lat),
+    lon: String(state.position.lon),
+    terminalId: route.id,
+    travelMode: state.travelMode
+  });
+  appendDestinationParams(query);
+  const payload = await fetchJson(`/api/map-route?${query}`);
+  return (payload.points || []).filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
+}
+
+function buildStraightMapPath() {
+  return state.map.points.map((point) => ({ lat: point.lat, lon: point.lon }));
+}
+
+function getMapBoundsPoints() {
+  const path = state.map.path.length > 1 ? state.map.path : buildStraightMapPath();
+  return [...path, ...state.map.points];
+}
+
 function zoomMap(delta) {
   if (!state.map.points.length) return;
   state.map.zoom = Math.max(5, Math.min(17, state.map.zoom + delta));
@@ -364,14 +397,16 @@ function fitMapZoom(points) {
 }
 
 function renderMap() {
-  const points = state.map.points;
-  if (!points.length) return;
+  const markers = state.map.points;
+  if (!markers.length) return;
 
   const zoom = state.map.zoom;
   const width = Math.max(320, elements.mapCanvas.clientWidth || 360);
   const height = Math.max(320, elements.mapCanvas.clientHeight || 420);
-  const projected = points.map((point) => ({ ...point, pixel: projectPoint(point, zoom) }));
-  const bounds = getPixelBounds(projected.map((point) => point.pixel));
+  const path = state.map.path.length > 1 ? state.map.path : buildStraightMapPath();
+  const projectedPath = path.map((point) => ({ ...point, pixel: projectPoint(point, zoom) }));
+  const projectedMarkers = markers.map((point) => ({ ...point, pixel: projectPoint(point, zoom) }));
+  const bounds = getPixelBounds([...projectedPath, ...projectedMarkers].map((point) => point.pixel));
   const center = {
     x: bounds.minX + bounds.width / 2,
     y: bounds.minY + bounds.height / 2
@@ -383,7 +418,7 @@ function renderMap() {
 
   elements.mapCanvas.innerHTML = "";
   renderTiles(zoom, width, height, topLeft);
-  renderRouteOverlay(projected, width, height, topLeft);
+  renderRouteOverlay(projectedPath, projectedMarkers, width, height, topLeft);
 }
 
 function renderTiles(zoom, width, height, topLeft) {
@@ -409,8 +444,13 @@ function renderTiles(zoom, width, height, topLeft) {
   }
 }
 
-function renderRouteOverlay(points, width, height, topLeft) {
-  const screenPoints = points.map((point) => ({
+function renderRouteOverlay(path, markers, width, height, topLeft) {
+  const screenPath = path.map((point) => ({
+    ...point,
+    x: Math.round(point.pixel.x - topLeft.x),
+    y: Math.round(point.pixel.y - topLeft.y)
+  }));
+  const screenMarkers = markers.map((point) => ({
     ...point,
     x: Math.round(point.pixel.x - topLeft.x),
     y: Math.round(point.pixel.y - topLeft.y)
@@ -422,7 +462,7 @@ function renderRouteOverlay(points, width, height, topLeft) {
   svg.setAttribute("aria-hidden", "true");
 
   const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-  polyline.setAttribute("points", screenPoints.map((point) => `${point.x},${point.y}`).join(" "));
+  polyline.setAttribute("points", screenPath.map((point) => `${point.x},${point.y}`).join(" "));
   polyline.setAttribute("fill", "none");
   polyline.setAttribute("stroke", "#0b4f8a");
   polyline.setAttribute("stroke-width", "5");
@@ -431,7 +471,7 @@ function renderRouteOverlay(points, width, height, topLeft) {
   svg.append(polyline);
   elements.mapCanvas.append(svg);
 
-  screenPoints.forEach((point, index) => {
+  screenMarkers.forEach((point, index) => {
     const marker = document.createElement("div");
     marker.className = `map-marker ${point.type}`;
     marker.style.left = `${point.x}px`;

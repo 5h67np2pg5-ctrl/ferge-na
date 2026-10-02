@@ -584,6 +584,17 @@ h1 {
   pointer-events: none;
 }
 
+.map-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, rgba(221, 238, 251, 0.94), rgba(244, 249, 253, 0.84));
+  color: var(--ink);
+  font-weight: 900;
+}
+
 .map-marker {
   z-index: 2;
   display: grid;

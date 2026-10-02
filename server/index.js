@@ -305,6 +305,151 @@ async function getGoogleRoute(origin, destination) {
   };
 }
 
+async function getRoutePath(origin, destination, travelMode) {
+  let googlePath = null;
+  if (GOOGLE_MAPS_API_KEY) {
+    try {
+      googlePath = await getGoogleRoutePath(origin, destination, travelMode);
+    } catch {
+      googlePath = null;
+    }
+  }
+  if (googlePath?.points?.length > 1) return googlePath;
+
+  let osrmPath = null;
+  try {
+    osrmPath = await getOsrmRoutePath(origin, destination, travelMode);
+  } catch {
+    osrmPath = null;
+  }
+  if (osrmPath?.points?.length > 1) return osrmPath;
+
+  return {
+    source: "fallback-straight",
+    points: normalizeRoutePath([origin, destination])
+  };
+}
+
+async function getGoogleRoutePath(origin, destination, travelMode) {
+  const body = {
+    origin: {
+      location: {
+        latLng: { latitude: origin.lat, longitude: origin.lon }
+      }
+    },
+    destination: {
+      location: {
+        latLng: { latitude: destination.lat, longitude: destination.lon }
+      }
+    },
+    travelMode: travelMode === "foot" ? "WALK" : "DRIVE",
+    routingPreference: travelMode === "foot" ? undefined : "TRAFFIC_AWARE_OPTIMAL",
+    computeAlternativeRoutes: false,
+    languageCode: "nb-NO",
+    units: "METRIC"
+  };
+
+  const response = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-goog-api-key": GOOGLE_MAPS_API_KEY,
+      "x-goog-fieldmask": "routes.polyline.encodedPolyline"
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Google Routes geometry failed with ${response.status}`);
+  }
+
+  const data = await response.json();
+  const encoded = data.routes?.[0]?.polyline?.encodedPolyline;
+  const points = encoded ? decodeGooglePolyline(encoded) : [];
+  return {
+    source: "google-routes",
+    points: normalizeRoutePath(points)
+  };
+}
+
+async function getOsrmRoutePath(origin, destination, travelMode) {
+  if (travelMode !== "vehicle") return null;
+  const osrmUrl = new URL(`https://router.project-osrm.org/route/v1/driving/${origin.lon},${origin.lat};${destination.lon},${destination.lat}`);
+  osrmUrl.searchParams.set("overview", "full");
+  osrmUrl.searchParams.set("geometries", "geojson");
+  osrmUrl.searchParams.set("alternatives", "false");
+  osrmUrl.searchParams.set("steps", "false");
+
+  const response = await fetch(osrmUrl);
+  if (!response.ok) throw new Error(`OSRM ${response.status}`);
+
+  const data = await response.json();
+  const coordinates = data.routes?.[0]?.geometry?.coordinates || [];
+  return {
+    source: "osrm",
+    points: normalizeRoutePath(coordinates.map(([lon, lat]) => ({ lat, lon })))
+  };
+}
+
+function decodeGooglePolyline(encoded) {
+  const points = [];
+  let index = 0;
+  let lat = 0;
+  let lon = 0;
+
+  while (index < encoded.length) {
+    const latResult = decodePolylineValue(encoded, index);
+    index = latResult.index;
+    lat += latResult.value;
+
+    const lonResult = decodePolylineValue(encoded, index);
+    index = lonResult.index;
+    lon += lonResult.value;
+
+    points.push({
+      lat: lat / 1e5,
+      lon: lon / 1e5
+    });
+  }
+
+  return points;
+}
+
+function decodePolylineValue(encoded, startIndex) {
+  let result = 0;
+  let shift = 0;
+  let index = startIndex;
+  let byte = null;
+
+  do {
+    byte = encoded.charCodeAt(index) - 63;
+    index += 1;
+    result |= (byte & 0x1f) << shift;
+    shift += 5;
+  } while (byte >= 0x20 && index < encoded.length);
+
+  return {
+    index,
+    value: result & 1 ? ~(result >> 1) : result >> 1
+  };
+}
+
+function normalizeRoutePath(points) {
+  const normalized = [];
+  for (const point of points) {
+    if (!Number.isFinite(point.lat) || !Number.isFinite(point.lon)) continue;
+    const rounded = {
+      lat: Math.round(point.lat * 1_000_000) / 1_000_000,
+      lon: Math.round(point.lon * 1_000_000) / 1_000_000
+    };
+    const previous = normalized[normalized.length - 1];
+    if (!previous || previous.lat !== rounded.lat || previous.lon !== rounded.lon) {
+      normalized.push(rounded);
+    }
+  }
+  return normalized;
+}
+
 function parseGoogleDuration(value) {
   if (typeof value !== "string") return 0;
   return Number(value.replace("s", "")) || 0;
@@ -732,6 +877,76 @@ async function getAlerts(_req, res, url) {
   sendJson(res, 200, { alerts: dedupeAlerts(alerts).slice(0, 4) });
 }
 
+async function getMapRoute(_req, res, url) {
+  const origin = parseLatLon(url.searchParams);
+  if (!origin) return badRequest(res, "Mangler gyldig lat/lon.");
+
+  const terminalId = url.searchParams.get("terminalId");
+  const travelMode = parseTravelMode(url.searchParams);
+  const destination = parseOptionalDestination(url.searchParams);
+  const entur = await getEnturWaterRoutes();
+  if (!entur.routes.length) {
+    return sendJson(res, 503, { error: "Kunne ikke hente autoritative fergedata fra Entur." });
+  }
+
+  const sourceRoutes = entur.routes.filter((route) => routeSupportsTravelMode(route, travelMode));
+  const selected =
+    sourceRoutes.find((terminal) => terminal.id === terminalId) ||
+    sourceRoutes
+      .map((terminal) => ({ ...terminal, distanceKm: distanceKm(origin, terminal) }))
+      .sort((a, b) => a.distanceKm - b.distanceKm)[0];
+
+  if (!selected) {
+    return sendJson(res, 404, { error: "Fant ingen fergestrekning for valgt reisemåte." });
+  }
+
+  const sources = [];
+  const path = [];
+  const firstLeg = await getRoutePath(origin, selected, travelMode);
+  sources.push(firstLeg.source);
+  appendPath(path, firstLeg.points);
+
+  if (destination) {
+    const arrivalMetrics = bestArrivalSideMetrics(origin, destination, selected);
+    const arrivalQuay = arrivalMetrics?.quay;
+    if (arrivalQuay) {
+      appendPath(path, [selected, arrivalQuay]);
+      const onwardLeg = await getRoutePath(arrivalQuay, destination, travelMode);
+      sources.push(onwardLeg.source);
+      appendPath(path, onwardLeg.points);
+    } else {
+      const destinationLeg = await getRoutePath(selected, destination, travelMode);
+      sources.push(destinationLeg.source);
+      appendPath(path, destinationLeg.points);
+    }
+  }
+
+  sendJson(res, 200, {
+    source: [...new Set(sources)].join("+"),
+    points: limitRoutePath(normalizeRoutePath(path), 1200)
+  });
+}
+
+function appendPath(target, points) {
+  for (const point of points || []) {
+    const previous = target[target.length - 1];
+    if (!previous || previous.lat !== point.lat || previous.lon !== point.lon) {
+      target.push({ lat: point.lat, lon: point.lon });
+    }
+  }
+}
+
+function limitRoutePath(points, maxPoints) {
+  if (points.length <= maxPoints) return points;
+  const limited = [];
+  const lastIndex = points.length - 1;
+  for (let i = 0; i < maxPoints; i += 1) {
+    const sourceIndex = Math.round((i / (maxPoints - 1)) * lastIndex);
+    limited.push(points[sourceIndex]);
+  }
+  return normalizeRoutePath(limited);
+}
+
 async function getGoogleTrafficAlertsForLeg(origin, destination, legLabel) {
   if (!GOOGLE_MAPS_API_KEY) return [];
   try {
@@ -934,6 +1149,7 @@ const server = createServer(async (req, res) => {
     if (url.pathname === "/api/ferries/nearby") return getNearby(req, res, url);
     if (url.pathname === "/api/decision") return getDecision(req, res, url);
     if (url.pathname === "/api/alerts") return getAlerts(req, res, url);
+    if (url.pathname === "/api/map-route") return getMapRoute(req, res, url);
     if (url.pathname === "/api/places") return getPlaces(req, res, url);
 
     return serveStatic(res, url.pathname);
