@@ -58,6 +58,7 @@
         </div>
         <h2 id="routeName">Finn nærmeste fergesamband</h2>
         <p id="recommendation">Del posisjon for å se aktuell avreiseside og om du rekker avgangen.</p>
+        <button class="secondary-action map-toggle" id="mapButton" type="button" hidden>Vis kart</button>
       </section>
 
       <section class="metrics" aria-label="Reise videre">
@@ -85,6 +86,16 @@
         <div class="route-list" id="routeList"></div>
       </section>
     </main>
+
+    <section class="map-sheet" id="mapSheet" aria-label="Kart" hidden>
+      <div class="map-panel">
+        <div class="map-header">
+          <strong id="mapTitle">Kart</strong>
+          <button class="secondary-action" id="closeMapButton" type="button">Lukk kart</button>
+        </div>
+        <iframe id="mapFrame" title="Kart over rute" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+      </div>
+    </section>
 
     <script src="/app.js" type="module"></script>
   </body>

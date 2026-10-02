@@ -7,7 +7,7 @@ const state = {
   routes: []
 };
 
-const APP_VERSION = "v28";
+const APP_VERSION = "v29";
 const API_BASE =
   window.location.hostname === "localhost" && window.location.port === "3000"
     ? "http://localhost:3002"
@@ -35,7 +35,12 @@ const elements = {
   noticeStack: document.querySelector("#noticeStack"),
   routeList: document.querySelector("#routeList"),
   routeListTitle: document.querySelector("#routeListTitle"),
-  sourceLabel: document.querySelector("#sourceLabel")
+  sourceLabel: document.querySelector("#sourceLabel"),
+  mapButton: document.querySelector("#mapButton"),
+  mapSheet: document.querySelector("#mapSheet"),
+  mapFrame: document.querySelector("#mapFrame"),
+  mapTitle: document.querySelector("#mapTitle"),
+  closeMapButton: document.querySelector("#closeMapButton")
 };
 
 elements.locateButton.addEventListener("click", locate);
@@ -44,6 +49,8 @@ elements.modeButtons.forEach((button) => button.addEventListener("click", () => 
 elements.destinationInput.addEventListener("input", handleDestinationInput);
 elements.destinationInput.addEventListener("focus", handleDestinationInput);
 elements.destinationInput.addEventListener("keydown", handleDestinationKeydown);
+elements.mapButton.addEventListener("click", showMap);
+elements.closeMapButton.addEventListener("click", closeMap);
 document.addEventListener("pointerdown", closeSuggestionsOnOutsideClick);
 
 disableServiceWorkerCache();
@@ -156,6 +163,7 @@ async function updateDecisionSafe() {
     elements.margin.textContent = "--";
     elements.crossingTime.textContent = "--";
     renderDestinationMetrics(null);
+    hideMapButton();
   }
 }
 
@@ -177,6 +185,7 @@ function clearDecision() {
   elements.recommendation.textContent = "Endre destinasjon, reisemåte eller posisjon.";
   elements.crossingTime.textContent = "--";
   renderDestinationMetrics(null);
+  hideMapButton();
 }
 
 function promptForRouteSelection() {
@@ -189,6 +198,7 @@ function promptForRouteSelection() {
   elements.recommendation.textContent = "Trykk på ønsket samband i listen for å hente neste avgang, kjøretid og overfart.";
   elements.crossingTime.textContent = "--";
   renderDestinationMetrics(null);
+  hideMapButton();
 }
 
 async function updateDecision() {
@@ -218,6 +228,7 @@ async function updateDecision() {
   elements.recommendation.textContent = decision.recommendation;
   elements.crossingTime.textContent = `${decision.crossingMinutes} min`;
   renderDestinationMetrics(decision.destinationSummary);
+  showMapButton();
 
   maybeNotify(decision);
 }
@@ -260,6 +271,43 @@ function renderDestinationMetrics(summary) {
 function formatMinutes(value) {
   if (!Number.isFinite(value)) return "--";
   return `${Math.max(0, Math.round(value))} min`;
+}
+
+function showMapButton() {
+  elements.mapButton.hidden = !getSelectedRoute();
+}
+
+function hideMapButton() {
+  elements.mapButton.hidden = true;
+  closeMap();
+}
+
+function showMap() {
+  const route = getSelectedRoute();
+  if (!state.position || !route) return;
+
+  elements.mapTitle.textContent = state.destination
+    ? `${route.sideName} til ${state.destination.name || "destinasjon"}`
+    : `Til ${route.sideName} ferjekai`;
+  elements.mapFrame.src = buildMapUrl(route);
+  elements.mapSheet.hidden = false;
+}
+
+function closeMap() {
+  elements.mapSheet.hidden = true;
+  elements.mapFrame.removeAttribute("src");
+}
+
+function buildMapUrl(route) {
+  const origin = `${state.position.lat},${state.position.lon}`;
+  const stops = [`${route.lat},${route.lon}`];
+  if (state.destination) {
+    if (Number.isFinite(route.arrivalLat) && Number.isFinite(route.arrivalLon)) {
+      stops.push(`${route.arrivalLat},${route.arrivalLon}`);
+    }
+    stops.push(`${state.destination.lat},${state.destination.lon}`);
+  }
+  return `https://maps.google.com/maps?saddr=${encodeURIComponent(origin)}&daddr=${encodeURIComponent(stops.join(" to:"))}&dirflg=d&output=embed`;
 }
 
 function renderRoutes(errorMessage = "") {

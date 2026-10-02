@@ -339,6 +339,11 @@ h1 {
   line-height: 1.45;
 }
 
+.map-toggle {
+  width: 100%;
+  margin-top: 12px;
+}
+
 .primary-action,
 .secondary-action {
   min-height: 54px;
@@ -510,6 +515,50 @@ h1 {
   background: rgba(255, 255, 255, 0.94);
   color: var(--muted);
   font-weight: 800;
+}
+
+.map-sheet {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  align-items: end;
+  padding: 12px;
+  background: rgba(8, 37, 67, 0.36);
+}
+
+.map-panel {
+  width: min(640px, 100%);
+  height: min(74vh, 720px);
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(7, 39, 70, 0.28);
+}
+
+.map-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 58px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.map-header strong {
+  min-width: 0;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.map-panel iframe {
+  display: block;
+  width: 100%;
+  height: calc(100% - 58px);
+  border: 0;
 }
 
 @media (max-width: 430px) {

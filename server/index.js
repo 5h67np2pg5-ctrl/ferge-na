@@ -507,6 +507,8 @@ function buildDestinationCandidates(sourceRoutes, origin, destination) {
       totalRouteKm: roundKm(totalRouteKm),
       ferryLegKm: roundKm(ferryLegKm),
       arrivalSideName: stripKaiSuffix(bestArrival.quay.name),
+      arrivalLat: bestArrival.quay.lat,
+      arrivalLon: bestArrival.quay.lon,
       ferryLegLabel: `${stripKaiSuffix(departure.name)}-${stripKaiSuffix(bestArrival.quay.name)}`,
       relevanceScore: totalRouteKm + arrivalDistanceKm * 0.25 + departureCorridor.corridorKm * 0.4
     };
