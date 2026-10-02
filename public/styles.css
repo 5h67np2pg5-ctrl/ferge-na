@@ -109,26 +109,28 @@ button {
 
 .fingerprint-button {
   display: grid;
-  width: 118px;
-  height: 118px;
+  width: 126px;
+  height: 126px;
   margin-top: 18px;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.34);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
+  background:
+    radial-gradient(circle at 48% 42%, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.08) 58%, rgba(255, 255, 255, 0.03));
   color: #ffffff;
-  box-shadow: 0 22px 44px rgba(0, 24, 48, 0.24);
+  box-shadow: 0 22px 44px rgba(0, 24, 48, 0.22), inset 0 1px 18px rgba(255, 255, 255, 0.08);
   touch-action: manipulation;
 }
 
 .fingerprint-button svg {
-  width: 64px;
-  height: 64px;
+  width: 72px;
+  height: 72px;
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 3;
+  stroke-width: 2.45;
+  opacity: 0.92;
 }
 
 .fingerprint-button:active {
