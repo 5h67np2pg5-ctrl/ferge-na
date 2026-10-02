@@ -305,6 +305,26 @@ async function getGoogleRoute(origin, destination) {
   };
 }
 
+async function getDriveRoute(origin, destination, travelMode) {
+  if (travelMode === "vehicle") {
+    try {
+      const googleRoute = await getGoogleRoute(origin, destination);
+      if (googleRoute) return googleRoute;
+    } catch {
+      // Fall through to OSRM, then final estimate.
+    }
+
+    try {
+      const osrmRoute = await getOsrmDriveRoute(origin, destination);
+      if (osrmRoute) return osrmRoute;
+    } catch {
+      // Fall through to final estimate.
+    }
+  }
+
+  return fallbackDrive(origin, destination);
+}
+
 async function getRoutePath(origin, destination, travelMode) {
   let googlePath = null;
   if (GOOGLE_MAPS_API_KEY) {
@@ -327,6 +347,23 @@ async function getRoutePath(origin, destination, travelMode) {
   return {
     source: "fallback-straight",
     points: normalizeRoutePath([origin, destination])
+  };
+}
+
+async function getOsrmDriveRoute(origin, destination) {
+  const data = await fetchOsrmRoute(origin, destination, {
+    overview: "false",
+    geometries: "geojson"
+  });
+  const route = data.routes?.[0];
+  if (!route) return null;
+  const durationMinutes = Math.max(1, Math.ceil(Number(route.duration || 0) / 60));
+  return {
+    provider: "osrm",
+    durationMinutes,
+    normalMinutes: durationMinutes,
+    trafficDelayMinutes: 0,
+    distanceKm: Math.round((Number(route.distance || 0) / 1000) * 10) / 10
   };
 }
 
@@ -374,21 +411,27 @@ async function getGoogleRoutePath(origin, destination, travelMode) {
 
 async function getOsrmRoutePath(origin, destination, travelMode) {
   if (travelMode !== "vehicle") return null;
-  const osrmUrl = new URL(`https://router.project-osrm.org/route/v1/driving/${origin.lon},${origin.lat};${destination.lon},${destination.lat}`);
-  osrmUrl.searchParams.set("overview", "full");
-  osrmUrl.searchParams.set("geometries", "geojson");
-  osrmUrl.searchParams.set("alternatives", "false");
-  osrmUrl.searchParams.set("steps", "false");
-
-  const response = await fetch(osrmUrl);
-  if (!response.ok) throw new Error(`OSRM ${response.status}`);
-
-  const data = await response.json();
+  const data = await fetchOsrmRoute(origin, destination, {
+    overview: "full",
+    geometries: "geojson"
+  });
   const coordinates = data.routes?.[0]?.geometry?.coordinates || [];
   return {
     source: "osrm",
     points: normalizeRoutePath(coordinates.map(([lon, lat]) => ({ lat, lon })))
   };
+}
+
+async function fetchOsrmRoute(origin, destination, options = {}) {
+  const osrmUrl = new URL(`https://router.project-osrm.org/route/v1/driving/${origin.lon},${origin.lat};${destination.lon},${destination.lat}`);
+  osrmUrl.searchParams.set("overview", options.overview || "false");
+  osrmUrl.searchParams.set("geometries", options.geometries || "geojson");
+  osrmUrl.searchParams.set("alternatives", "false");
+  osrmUrl.searchParams.set("steps", "false");
+
+  const response = await fetch(osrmUrl);
+  if (!response.ok) throw new Error(`OSRM ${response.status}`);
+  return response.json();
 }
 
 function decodeGooglePolyline(encoded) {
@@ -779,7 +822,7 @@ async function getDecision(req, res, url) {
   let routeError = null;
 
   try {
-    drive = await getGoogleRoute(origin, selected);
+    drive = await getDriveRoute(origin, selected, travelMode);
   } catch (error) {
     routeError = error.message;
   }
@@ -815,7 +858,7 @@ async function buildDestinationSummary(origin, destination, selected, driveToFer
 
   let onwardDrive = null;
   try {
-    onwardDrive = await getGoogleRoute(arrivalQuay, destination);
+    onwardDrive = await getDriveRoute(arrivalQuay, destination, "vehicle");
   } catch {
     onwardDrive = null;
   }
