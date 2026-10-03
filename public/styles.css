@@ -195,43 +195,6 @@ h1 {
   margin-top: 8px;
 }
 
-.travel-mode {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: 8px;
-  padding: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.36);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.93);
-  box-shadow: 0 10px 28px rgba(16, 72, 123, 0.08);
-}
-
-.mode-summary {
-  grid-column: 1 / -1;
-  margin: 4px 6px 2px;
-  color: var(--brand);
-  font-size: 0.88rem;
-  font-weight: 900;
-}
-
-.mode-button {
-  min-height: 52px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #f7fbff;
-  color: var(--muted);
-  font-weight: 900;
-}
-
-.mode-button.active {
-  border-color: var(--brand);
-  background: linear-gradient(135deg, #0b4f8a, #1f7fc4);
-  color: #fff;
-  box-shadow: 0 0 0 3px rgba(34, 124, 190, 0.16);
-}
-
-.mode-button:focus-visible,
 .primary-action:focus-visible,
 .secondary-action:focus-visible,
 .route-card:focus-visible,
@@ -427,8 +390,7 @@ h1 {
   box-shadow: 0 12px 30px rgba(11, 79, 138, 0.22);
 }
 
-.primary-action:hover,
-.mode-button.active:hover {
+.primary-action:hover {
   background: linear-gradient(135deg, #083f72, #1472b4);
 }
 
@@ -451,7 +413,6 @@ h1 {
 .icon-button:active,
 .primary-action:active,
 .secondary-action:active,
-.mode-button:active,
 .route-card:active,
 .suggestion-button:active {
   transform: translateY(1px);

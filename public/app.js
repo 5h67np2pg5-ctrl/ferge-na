@@ -17,7 +17,7 @@ const state = {
   }
 };
 
-const APP_VERSION = "v39";
+const APP_VERSION = "v40";
 const API_BASE =
   window.location.hostname === "localhost" && window.location.port === "3000"
     ? "http://localhost:3002"
@@ -29,8 +29,6 @@ const elements = {
   enterAppButton: document.querySelector("#enterAppButton"),
   locateButton: document.querySelector("#locateButton"),
   refreshButton: document.querySelector("#refreshButton"),
-  modeButtons: [...document.querySelectorAll(".mode-button")],
-  modeSummary: document.querySelector("#modeSummary"),
   statusPill: document.querySelector("#statusPill"),
   updatedAt: document.querySelector("#updatedAt"),
   departureTime: document.querySelector("#departureTime"),
@@ -61,7 +59,6 @@ const elements = {
 elements.enterAppButton.addEventListener("click", enterApp);
 elements.locateButton.addEventListener("click", locate);
 elements.refreshButton.addEventListener("click", refresh);
-elements.modeButtons.forEach((button) => button.addEventListener("click", () => setTravelMode(button.dataset.mode)));
 elements.destinationInput.addEventListener("input", handleDestinationInput);
 elements.destinationInput.addEventListener("focus", handleDestinationInput);
 elements.destinationInput.addEventListener("keydown", handleDestinationKeydown);
@@ -80,7 +77,6 @@ initialize();
 
 function initialize() {
   seedDemo();
-  renderTravelMode();
   renderRouteLoading();
 }
 
@@ -677,31 +673,6 @@ function formatRouteMeta(route) {
   const total = Number.isFinite(route.totalRouteKm) ? ` · ${route.totalRouteKm} km total rute` : "";
   const arrival = route.arrivalSideName ? ` · videre fra ${route.arrivalSideName}` : "";
   return `${descriptor} · ${route.distanceKm} km til kai${arrival}${total}`;
-}
-
-async function setTravelMode(mode) {
-  if (!["vehicle", "foot"].includes(mode) || state.travelMode === mode) return;
-  state.travelMode = mode;
-  state.selectedTerminalId = null;
-  renderTravelMode();
-  setLoading("Oppdaterer valg");
-  if (state.position) await refresh();
-}
-
-function renderTravelMode() {
-  for (const button of elements.modeButtons) {
-    const active = button.dataset.mode === state.travelMode;
-    button.classList.toggle("active", active);
-    button.setAttribute("aria-pressed", active ? "true" : "false");
-    button.textContent = active
-      ? `✓ ${button.dataset.mode === "vehicle" ? "Kjøretøy" : "Uten kjøretøy"}`
-      : button.dataset.mode === "vehicle"
-        ? "Kjøretøy"
-        : "Uten kjøretøy";
-  }
-  elements.modeSummary.textContent = state.travelMode === "vehicle"
-    ? "Valgt: kjøretøy"
-    : "Valgt: uten kjøretøy";
 }
 
 function handleDestinationInput() {
