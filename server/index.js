@@ -692,10 +692,237 @@ async function buildDestinationCandidates(sourceRoutes, origin, destination, tra
     routePath = null;
   }
 
-  if (!routePath?.points?.length || routePath.source === "fallback-straight") return [];
+  const pathCandidates = routePath?.points?.length && routePath.source !== "fallback-straight"
+    ? buildRoutePathFerryCandidates(sourceRoutes, routePath.points, directDrive)
+    : [];
+  const pathSequence = await buildRoutePathSequence(pathCandidates, sourceRoutes, origin, destination, directDrive, travelMode);
+  const bestSequence = await buildBestEvaluatedFerrySequence(sourceRoutes, origin, destination, directDrive, travelMode);
+  return chooseShortestCandidateSequence(pathSequence, bestSequence);
+}
 
-  return buildRoutePathFerryCandidates(sourceRoutes, routePath.points, directDrive)
-    .sort((a, b) => a.relevanceScore - b.relevanceScore);
+function chooseShortestCandidateSequence(...sequences) {
+  const valid = sequences.filter((sequence) => sequence.length);
+  if (!valid.length) return [];
+  return valid.sort((a, b) => {
+    const aKm = a[0].totalRouteKm ?? Infinity;
+    const bKm = b[0].totalRouteKm ?? Infinity;
+    if (Math.abs(aKm - bKm) > 5) return aKm - bKm;
+    const aMin = a[0].totalNormalMinutes ?? Infinity;
+    const bMin = b[0].totalNormalMinutes ?? Infinity;
+    return aMin - bMin;
+  })[0];
+}
+
+async function buildBestEvaluatedFerrySequence(sourceRoutes, origin, destination, directDrive, travelMode) {
+  const legs = buildDirectedFerryLegs(sourceRoutes, origin, destination)
+    .sort((a, b) => a.heuristicScore - b.heuristicScore)
+    .slice(0, 36);
+  if (!legs.length) return [];
+
+  const driveCache = new Map();
+  const drive = cachedDrive(driveCache, travelMode);
+
+  const evaluated = [];
+  for (const first of legs) {
+    const oneLeg = await evaluateFerrySequence([first], origin, destination, directDrive, drive);
+    if (oneLeg) evaluated.push(oneLeg);
+    for (const second of legs) {
+      if (!canFollowFerryLeg(first, second)) continue;
+      const twoLegs = await evaluateFerrySequence([first, second], origin, destination, directDrive, drive);
+      if (twoLegs) evaluated.push(twoLegs);
+    }
+  }
+
+  const candidates = evaluated.sort((a, b) => a.score - b.score).slice(0, 40);
+  let best = null;
+  for (const candidate of candidates) {
+    if (await sequenceHasHiddenFerry(candidate, sourceRoutes, travelMode)) continue;
+    best = candidate;
+    break;
+  }
+
+  if (!best) return [];
+  const directMinutes = directDrive?.normalMinutes || fallbackDrive(origin, destination).normalMinutes;
+  const improvesRoute = best.totalMinutes <= directMinutes - 15;
+  const followsMainPath = best.routePathMatched;
+  if (!improvesRoute && !followsMainPath) return [];
+
+  return sequenceToRouteCandidates(best, directDrive);
+}
+
+async function buildRoutePathSequence(pathCandidates, sourceRoutes, origin, destination, directDrive, travelMode) {
+  const ordered = pathCandidates
+    .sort((a, b) => a.relevanceScore - b.relevanceScore)
+    .filter((candidate, index, candidates) => candidates.findIndex((item) => item.routeId === candidate.routeId) === index);
+  if (!ordered.length) return [];
+
+  const legs = ordered.map((candidate) => ({
+    departure: candidate,
+    arrival: {
+      id: candidate.arrivalId || `${candidate.routeId}:arrival`,
+      name: `${candidate.arrivalSideName || candidate.oppositeSideName || "Ankomst"} ferjekai`,
+      lat: candidate.arrivalLat,
+      lon: candidate.arrivalLon
+    },
+    ferryLegKm: candidate.ferryLegKm,
+    crossingMinutes: estimateFerryCrossingMinutes(candidate.routeId, candidate.ferryLegKm),
+    departureProgress: candidate.relevanceScore,
+    arrivalProgress: candidate.arrivalPathKm ?? candidate.relevanceScore + candidate.ferryLegKm,
+    heuristicScore: candidate.relevanceScore
+  }));
+
+  if (legs.some((leg) => !Number.isFinite(leg.arrival.lat) || !Number.isFinite(leg.arrival.lon))) return [];
+
+  const driveCache = new Map();
+  const sequence = await evaluateFerrySequence(legs, origin, destination, directDrive, cachedDrive(driveCache, travelMode));
+  if (!sequence) return [];
+  if (await sequenceHasHiddenFerry(sequence, sourceRoutes, travelMode)) return [];
+  return sequenceToRouteCandidates(sequence, directDrive);
+}
+
+function sequenceToRouteCandidates(sequence, directDrive) {
+  let elapsedBeforeLeg = 0;
+  const remainingAfterLegs = sequence.legs.map((leg) => {
+    elapsedBeforeLeg += leg.driveToDeparture.normalMinutes + leg.crossingMinutes;
+    return Math.max(0, sequence.totalMinutes - elapsedBeforeLeg);
+  });
+
+  return sequence.legs.map((leg, index) => ({
+    ...leg.departure,
+    distanceKm: roundKm(leg.driveToDeparture.distanceKm),
+    arrivalDistanceKm: roundKm(leg.onwardDrive.distanceKm),
+    destinationGainKm: roundKm(leg.onwardDrive.distanceKm),
+    remainingNormalMinutes: remainingAfterLegs[index],
+    totalRouteKm: roundKm(sequence.totalKm),
+    ferryLegKm: roundKm(leg.ferryLegKm),
+    arrivalSideName: stripKaiSuffix(leg.arrival.name),
+    arrivalLat: leg.arrival.lat,
+    arrivalLon: leg.arrival.lon,
+    ferryLegLabel: `${stripKaiSuffix(leg.departure.name)}-${stripKaiSuffix(leg.arrival.name)}`,
+    directRouteKm: directDrive ? roundKm(directDrive.distanceKm) : null,
+    directNormalMinutes: directDrive?.normalMinutes || null,
+    totalNormalMinutes: sequence.totalMinutes,
+    relevanceScore: index
+  }));
+}
+
+function cachedDrive(cache, travelMode) {
+  return async (a, b) => {
+    const key = `${a.lat.toFixed(5)},${a.lon.toFixed(5)}:${b.lat.toFixed(5)},${b.lon.toFixed(5)}`;
+    if (!cache.has(key)) cache.set(key, getDriveRoute(a, b, travelMode));
+    return cache.get(key);
+  };
+}
+
+function buildDirectedFerryLegs(sourceRoutes, origin, destination) {
+  const directKm = distanceKm(origin, destination);
+  const maxCorridorKm = Math.max(18, Math.min(70, directKm * 0.28));
+  const byRoute = new Map();
+  for (const terminal of sourceRoutes) {
+    if (!byRoute.has(terminal.routeId)) byRoute.set(terminal.routeId, []);
+    byRoute.get(terminal.routeId).push(terminal);
+  }
+
+  const legs = [];
+  for (const terminals of byRoute.values()) {
+    for (const departure of terminals) {
+      for (const arrival of terminals) {
+        if (departure.id === arrival.id) continue;
+        const departureProgress = routeProgress(origin, destination, departure);
+        const arrivalProgress = routeProgress(origin, destination, arrival);
+        if (arrivalProgress <= departureProgress + 0.01) continue;
+        if (departureProgress < -0.12 || arrivalProgress > 1.12) continue;
+
+        const departureCorridor = routeCorridorMetrics(origin, destination, departure).corridorKm;
+        const arrivalCorridor = routeCorridorMetrics(origin, destination, arrival).corridorKm;
+        if (Math.min(departureCorridor, arrivalCorridor) > maxCorridorKm) continue;
+
+        const ferryLegKm = distanceKm(departure, arrival);
+        if (ferryLegKm < 0.5 || ferryLegKm > 42) continue;
+
+        legs.push({
+          departure,
+          arrival,
+          ferryLegKm,
+          crossingMinutes: estimateFerryCrossingMinutes(departure.routeId, ferryLegKm),
+          departureProgress,
+          arrivalProgress,
+          heuristicScore: departureProgress * 100 + departureCorridor + arrivalCorridor + ferryLegKm * 0.25
+        });
+      }
+    }
+  }
+  return legs;
+}
+
+function canFollowFerryLeg(first, second) {
+  if (first.departure.routeId === second.departure.routeId) return false;
+  return second.departureProgress > first.arrivalProgress + 0.03;
+}
+
+function estimateFerryCrossingMinutes(routeId, ferryLegKm) {
+  return (routeMeta[routeId] || {}).crossingMinutes || Math.max(10, Math.round(10 + ferryLegKm * 1.6));
+}
+
+async function evaluateFerrySequence(legs, origin, destination, directDrive, drive) {
+  try {
+    let current = origin;
+    let totalMinutes = 0;
+    let totalKm = 0;
+    const evaluatedLegs = [];
+    const roadSegments = [];
+
+    for (const leg of legs) {
+      const driveToDeparture = await drive(current, leg.departure);
+      totalMinutes += driveToDeparture.normalMinutes + leg.crossingMinutes;
+      totalKm += driveToDeparture.distanceKm + leg.ferryLegKm;
+      roadSegments.push({ from: current, to: leg.departure });
+      evaluatedLegs.push({ ...leg, driveToDeparture });
+      current = leg.arrival;
+    }
+
+    const finalDrive = await drive(current, destination);
+    totalMinutes += finalDrive.normalMinutes;
+    totalKm += finalDrive.distanceKm;
+    roadSegments.push({ from: current, to: destination });
+
+    for (let i = 0; i < evaluatedLegs.length; i += 1) {
+      const onwardFromArrival = i === evaluatedLegs.length - 1
+        ? finalDrive
+        : await drive(evaluatedLegs[i].arrival, evaluatedLegs[i + 1].departure);
+      evaluatedLegs[i].onwardDrive = onwardFromArrival;
+    }
+
+    const directMinutes = directDrive?.normalMinutes || Infinity;
+    return {
+      legs: evaluatedLegs,
+      roadSegments,
+      totalMinutes,
+      totalKm,
+      routePathMatched: totalMinutes <= directMinutes + 8,
+      score: totalMinutes + totalKm * 0.03 + legs.length * 2
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function sequenceHasHiddenFerry(sequence, sourceRoutes, travelMode) {
+  const explicitRouteIds = new Set(sequence.legs.map((leg) => leg.departure.routeId));
+  for (const segment of sequence.roadSegments) {
+    if (distanceKm(segment.from, segment.to) < 1) continue;
+    let path = null;
+    try {
+      path = await getRoutePath(segment.from, segment.to, travelMode);
+    } catch {
+      path = null;
+    }
+    if (!path?.points?.length || path.source === "fallback-straight") continue;
+    const hidden = buildRoutePathFerryCandidates(sourceRoutes, path.points, null)
+      .filter((candidate) => !explicitRouteIds.has(candidate.routeId));
+    if (hidden.length) return true;
+  }
+  return false;
 }
 
 function buildRoutePathFerryCandidates(sourceRoutes, routePoints, directDrive) {
@@ -733,9 +960,11 @@ function buildRoutePathFerryCandidates(sourceRoutes, routePoints, directDrive) {
         destinationGainKm: roundKm(path.totalKm - arrival.match.alongKm),
         totalRouteKm: roundKm(directDrive?.distanceKm || path.totalKm),
         ferryLegKm: roundKm(ferryLegKm),
+        arrivalId: arrival.terminal.id,
         arrivalSideName: stripKaiSuffix(arrival.terminal.name),
         arrivalLat: arrival.terminal.lat,
         arrivalLon: arrival.terminal.lon,
+        arrivalPathKm: arrival.match.alongKm,
         ferryLegLabel: `${stripKaiSuffix(departure.terminal.name)}-${stripKaiSuffix(arrival.terminal.name)}`,
         directRouteKm: directDrive ? roundKm(directDrive.distanceKm) : roundKm(path.totalKm),
         directNormalMinutes: directDrive?.normalMinutes || null,
@@ -821,7 +1050,7 @@ async function refineDestinationCandidates(candidates, origin, destination, dire
       continue;
     }
 
-    const crossingMinutes = (routeMeta[candidate.routeId] || {}).crossingMinutes || Math.max(8, Math.round(candidate.ferryLegKm * 4));
+    const crossingMinutes = estimateFerryCrossingMinutes(candidate.routeId, candidate.ferryLegKm);
     const totalRouteKm = driveToFerry.distanceKm + candidate.ferryLegKm + onwardDrive.distanceKm;
     const totalMinutes = driveToFerry.normalMinutes + crossingMinutes + onwardDrive.normalMinutes;
     const directMinutes = directDrive?.normalMinutes || fallbackDrive(origin, destination).normalMinutes;
@@ -961,7 +1190,7 @@ async function getDecision(req, res, url) {
 
   const crossingMinutes = enturSchedule.crossingMinutes || (routeMeta[selected.routeId] || {}).crossingMinutes || 25;
   const destinationSummary = destination
-    ? await buildDestinationSummary(origin, destination, selected, drive, crossingMinutes)
+    ? await buildDestinationSummary(origin, destination, selected, drive, crossingMinutes, sourceRoutes, travelMode)
     : null;
 
   sendJson(res, 200, {
@@ -971,7 +1200,24 @@ async function getDecision(req, res, url) {
   });
 }
 
-async function buildDestinationSummary(origin, destination, selected, driveToFerry, crossingMinutes) {
+async function buildDestinationSummary(origin, destination, selected, driveToFerry, crossingMinutes, sourceRoutes, travelMode) {
+  const routeSequence = await buildDestinationCandidates(sourceRoutes, origin, destination, travelMode);
+  const sequenceLeg = routeSequence.find((candidate) => candidate.id === selected.id);
+  if (sequenceLeg?.totalNormalMinutes && Number.isFinite(sequenceLeg.remainingNormalMinutes)) {
+    return {
+      arrivalSideName: sequenceLeg.arrivalSideName,
+      onwardDrive: {
+        provider: "route-sequence",
+        durationMinutes: sequenceLeg.remainingNormalMinutes,
+        normalMinutes: sequenceLeg.remainingNormalMinutes,
+        trafficDelayMinutes: 0,
+        distanceKm: sequenceLeg.arrivalDistanceKm
+      },
+      totalTravelMinutes: sequenceLeg.totalNormalMinutes,
+      totalNormalMinutes: sequenceLeg.totalNormalMinutes
+    };
+  }
+
   const arrivalMetrics = bestArrivalSideMetrics(origin, destination, selected);
   const arrivalQuay = arrivalMetrics?.quay;
   if (!arrivalQuay) return null;
@@ -1050,6 +1296,16 @@ async function getMapRoute(_req, res, url) {
 
   if (!selected) {
     return sendJson(res, 404, { error: "Fant ingen fergestrekning for valgt reisemåte." });
+  }
+
+  if (destination) {
+    const destinationPath = await getRoutePath(origin, destination, travelMode);
+    if (destinationPath?.points?.length > 1 && destinationPath.source !== "fallback-straight") {
+      return sendJson(res, 200, {
+        source: destinationPath.source,
+        points: limitRoutePath(destinationPath.points, 1200)
+      });
+    }
   }
 
   const sources = [];

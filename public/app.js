@@ -17,7 +17,7 @@ const state = {
   }
 };
 
-const APP_VERSION = "v40";
+const APP_VERSION = "v41";
 const API_BASE =
   window.location.hostname === "localhost" && window.location.port === "3000"
     ? "http://localhost:3002"
@@ -131,12 +131,8 @@ async function refresh() {
   try {
     setLoading("Oppdaterer");
     renderRouteLoading();
-    let nearby = await fetchNearbyRoutes(true);
-    let destinationFiltered = Boolean(state.destination);
-    if (destinationFiltered && !(nearby.routes || []).length) {
-      nearby = await fetchNearbyRoutes(false);
-      destinationFiltered = false;
-    }
+    const nearby = await fetchNearbyRoutes(true);
+    const destinationFiltered = Boolean(state.destination);
 
     state.routes = nearby.routes || [];
     elements.routeListTitle.textContent = destinationFiltered ? "Aktuelle samband" : "5 nærmeste samband";
@@ -148,7 +144,9 @@ async function refresh() {
 
     renderRoutes();
     if (!state.routes.length) {
-      clearDecision();
+      clearDecision(destinationFiltered
+        ? "Fant ingen ferge på beregnet korteste rute til destinasjonen."
+        : null);
       renderAlerts([]);
       return;
     }
@@ -198,14 +196,14 @@ async function updateAlertsSafe() {
   }
 }
 
-function clearDecision() {
+function clearDecision(message = null) {
   elements.statusPill.textContent = "Ingen aktuell ferge";
   elements.statusPill.className = "status-pill low";
   elements.departureTime.textContent = "--:--";
   elements.normalDriveTime.textContent = "--";
   elements.margin.textContent = "--";
   elements.routeName.textContent = "Ingen aktuell avgangskai";
-  elements.recommendation.textContent = "Endre destinasjon, reisemåte eller posisjon.";
+  elements.recommendation.textContent = message || "Endre destinasjon eller posisjon.";
   elements.crossingTime.textContent = "--";
   renderDestinationMetrics(null);
   hideMapButton();
