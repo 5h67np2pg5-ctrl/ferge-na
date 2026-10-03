@@ -13,14 +13,33 @@
     <section class="front-page" id="frontPage" aria-label="Ferge NÅ startside">
       <div class="front-content">
         <h1>Ferge NÅ!</h1>
-        <div class="front-languages" aria-label="Appnavn på flere språk">
-          <span>Ferry Now!</span>
-          <span>Fähre Jetzt!</span>
-          <span>¡Ferry ahora!</span>
-          <span>Ferry maintenant!</span>
-          <span>Traghetto ora!</span>
+        <div class="front-languages" aria-label="Velg språk" data-i18n-aria="languageChoice">
+          <button class="language-option active" type="button" data-language="no" aria-pressed="true">
+            <span class="language-flag">🇳🇴</span>
+            <span><strong>Ferge NÅ!</strong><small>Norsk</small></span>
+          </button>
+          <button class="language-option" type="button" data-language="en" aria-pressed="false">
+            <span class="language-flag">🇬🇧</span>
+            <span><strong>Ferry Now!</strong><small>English</small></span>
+          </button>
+          <button class="language-option" type="button" data-language="de" aria-pressed="false">
+            <span class="language-flag">🇩🇪</span>
+            <span><strong>Fähre Jetzt!</strong><small>Deutsch</small></span>
+          </button>
+          <button class="language-option" type="button" data-language="es" aria-pressed="false">
+            <span class="language-flag">🇪🇸</span>
+            <span><strong>¡Ferry ahora!</strong><small>Español</small></span>
+          </button>
+          <button class="language-option" type="button" data-language="fr" aria-pressed="false">
+            <span class="language-flag">🇫🇷</span>
+            <span><strong>Ferry maintenant!</strong><small>Français</small></span>
+          </button>
+          <button class="language-option" type="button" data-language="it" aria-pressed="false">
+            <span class="language-flag">🇮🇹</span>
+            <span><strong>Traghetto ora!</strong><small>Italiano</small></span>
+          </button>
         </div>
-        <button class="fingerprint-button" id="enterAppButton" type="button" aria-label="Åpne hovedside">
+        <button class="fingerprint-button" id="enterAppButton" type="button" aria-label="Åpne hovedside" data-i18n-aria="openMain">
           <svg viewBox="0 0 64 64" aria-hidden="true">
             <path d="M15.5 28.8c.8-12.1 8.2-20.3 18-20.3 9.3 0 16.2 6.6 17.1 16.3" />
             <path d="M11.1 39.5c-.5-4.8-.3-9 .8-12.7C14.5 17 22.7 10.5 33.2 10.5c7.1 0 13.3 3.1 16.9 8.6 2.2 3.4 3.2 7.3 3.2 12.3" />
@@ -39,21 +58,21 @@
     </section>
 
     <main class="app-shell" id="appShell" hidden>
-      <section class="topbar" aria-label="Status">
+      <section class="topbar" aria-label="Status" data-i18n-aria="status">
         <div>
-          <p class="eyebrow">Fergetider</p>
-          <h1>Fergetider</h1>
+          <p class="eyebrow" data-i18n="appName">Fergetider</p>
+          <h1 data-i18n="appName">Fergetider</h1>
         </div>
-        <button class="icon-button" id="refreshButton" type="button" aria-label="Oppdater">↻</button>
+        <button class="icon-button" id="refreshButton" type="button" aria-label="Oppdater" data-i18n-aria="refresh">↻</button>
       </section>
 
-      <section class="quick-actions" aria-label="Start">
-        <button class="primary-action" id="locateButton" type="button">Bruk min posisjon</button>
+      <section class="quick-actions" aria-label="Start" data-i18n-aria="start">
+        <button class="primary-action" id="locateButton" type="button" data-i18n="usePosition">Bruk min posisjon</button>
       </section>
 
-      <section class="destination-panel" aria-label="Endelig destinasjon">
-        <label for="destinationInput">Endelig destinasjon</label>
-        <input id="destinationInput" type="search" autocomplete="off" placeholder="Skriv sted, adresse eller kai" />
+      <section class="destination-panel" aria-label="Endelig destinasjon" data-i18n-aria="finalDestination">
+        <label for="destinationInput" data-i18n="finalDestination">Endelig destinasjon</label>
+        <input id="destinationInput" type="search" autocomplete="off" placeholder="Skriv sted, adresse eller kai" data-i18n-placeholder="destinationPlaceholder" />
         <div class="suggestions" id="destinationSuggestions"></div>
       </section>
 
@@ -66,39 +85,39 @@
         </div>
         <div class="decision-grid">
           <div>
-            <span class="label">Neste ferge</span>
+            <span class="label" data-i18n="nextFerry">Neste ferge</span>
             <strong id="departureTime">--:--</strong>
           </div>
           <div>
-            <span class="label">Normal kjøretid</span>
+            <span class="label" data-i18n="normalDrive">Normal kjøretid</span>
             <strong id="normalDriveTime">--</strong>
           </div>
           <div>
-            <span class="label">Ventetid ved kai</span>
+            <span class="label" data-i18n="quayWait">Ventetid ved kai</span>
             <strong id="margin">-- min</strong>
           </div>
         </div>
         <h2 id="routeName">Finn nærmeste fergesamband</h2>
         <p id="recommendation">Del posisjon for å se aktuell avreiseside og om du rekker avgangen.</p>
-        <button class="secondary-action map-toggle" id="mapButton" type="button" hidden>Vis kart</button>
+        <button class="secondary-action map-toggle" id="mapButton" type="button" hidden data-i18n="showMap">Vis kart</button>
       </section>
 
-      <section class="metrics" aria-label="Reise videre">
+      <section class="metrics" aria-label="Reise videre" data-i18n-aria="travelOnward">
         <article>
-          <span>Overfart</span>
+          <span data-i18n="crossing">Overfart</span>
           <strong id="crossingTime">--</strong>
         </article>
         <article id="onwardMetric" hidden>
-          <span>Videre fra kai</span>
+          <span data-i18n="onwardFromQuay">Videre fra kai</span>
           <strong id="onwardTime">--</strong>
         </article>
         <article id="totalMetric" hidden>
-          <span>Til destinasjon</span>
+          <span data-i18n="toDestination">Til destinasjon</span>
           <strong id="totalTime">--</strong>
         </article>
       </section>
 
-      <section class="notice-stack" id="noticeStack" aria-label="Varsler"></section>
+      <section class="notice-stack" id="noticeStack" aria-label="Varsler" data-i18n-aria="alerts"></section>
 
       <section class="list-section">
         <div class="section-heading">
@@ -109,14 +128,14 @@
       </section>
     </main>
 
-    <section class="map-sheet" id="mapSheet" aria-label="Kart" hidden>
+    <section class="map-sheet" id="mapSheet" aria-label="Kart" data-i18n-aria="map" hidden>
       <div class="map-panel">
         <div class="map-header">
           <strong id="mapTitle">Kart</strong>
-          <button class="secondary-action" id="closeMapButton" type="button">Lukk kart</button>
+          <button class="secondary-action" id="closeMapButton" type="button" data-i18n="closeMap">Lukk kart</button>
         </div>
-        <div class="map-body" id="mapCanvas" role="img" aria-label="Kart over valgt rute"></div>
-        <div class="map-controls" aria-label="Zoom">
+        <div class="map-body" id="mapCanvas" role="img" aria-label="Kart over valgt rute" data-i18n-aria="routeMap"></div>
+        <div class="map-controls" aria-label="Zoom" data-i18n-aria="zoom">
           <button id="zoomInButton" type="button" aria-label="Zoom inn">+</button>
           <button id="zoomOutButton" type="button" aria-label="Zoom ut">-</button>
         </div>

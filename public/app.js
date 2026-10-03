@@ -2,6 +2,7 @@ const state = {
   position: null,
   selectedTerminalId: null,
   travelMode: "vehicle",
+  language: localStorage.getItem("ferge-na-language") || "no",
   destination: null,
   destinationSearchTimer: null,
   routes: [],
@@ -17,16 +18,449 @@ const state = {
   }
 };
 
-const APP_VERSION = "v42";
+const APP_VERSION = "v43";
 const API_BASE =
   window.location.hostname === "localhost" && window.location.port === "3000"
     ? "http://localhost:3002"
     : "";
 
+const TRANSLATIONS = {
+  no: {
+    appName: "Fergetider",
+    usePosition: "Bruk min posisjon",
+    locating: "Henter posisjon",
+    positionActive: "Posisjon aktiv",
+    refresh: "Oppdater",
+    updating: "Oppdaterer",
+    finalDestination: "Endelig destinasjon",
+    destinationPlaceholder: "Skriv sted, adresse eller kai",
+    nextFerry: "Neste ferge",
+    normalDrive: "Normal kjøretid",
+    quayWait: "Ventetid ved kai",
+    showMap: "Vis kart",
+    closeMap: "Lukk kart",
+    crossing: "Overfart",
+    onwardFromQuay: "Videre fra kai",
+    toDestination: "Til destinasjon",
+    routeListDestination: "Aktuelle samband",
+    routeListNearest: "5 nærmeste samband",
+    noRoutes: "Ingen fergestrekninger funnet for posisjon og reisemåte.",
+    noDestinationFerry: "Fant ingen ferge på beregnet korteste rute til destinasjonen.",
+    noCurrentFerry: "Ingen aktuell ferge",
+    noDepartureQuay: "Ingen aktuell avgangskai",
+    changeDestinationPosition: "Endre destinasjon eller posisjon.",
+    chooseRoute: "Velg samband",
+    chooseFerryRoute: "Velg fergestrekning",
+    selectRouteInstruction: "Trykk på ønsket samband i listen for å hente neste avgang, kjøretid og overfart.",
+    findNearest: "Finn nærmeste fergesamband",
+    sharePosition: "Del posisjon for å se aktuell avreiseside og om du rekker avgangen.",
+    routesFetched: "Ruter hentet",
+    decisionUnavailable: "Kunne ikke hente neste avgang akkurat nå, men sambandslisten er oppdatert.",
+    sourceUnknown: "Ukjent",
+    enturUnavailable: "Entur utilgjengelig",
+    fetchError: "Kunne ikke hente autoritative fergestrekninger akkurat nå.",
+    loadingRoutes: "Henter fergestrekninger...",
+    selected: "Valgt",
+    select: "Velg",
+    carFerry: "bilferge",
+    fastBoat: "hurtigbåt",
+    toDepartureQuay: "km til avgangskai",
+    toQuay: "km til kai",
+    onwardFrom: "videre fra",
+    totalRoute: "km total rute",
+    ferryOrdinal: (index) => `${index + 1} ferge`,
+    routeToDestination: (from, to) => `${from} til ${to}`,
+    routeToQuay: (from) => `Til ${from} ferjekai`,
+    loadingRoad: "Henter vei...",
+    vehicle: "Kjøretøy",
+    arrival: "Ankomst",
+    destination: "Destinasjon",
+    routeSummary: (drive, crossing, onward, total) => `Til destinasjon: ${drive} til kai + ${crossing} overfart + ${onward} videre = ${total}.`,
+    noGeolocationDemo: "Nettleseren støtter ikke posisjon. Viser demo.",
+    locationFailedDemo: "Fikk ikke posisjon. Viser demo ved Halhjem.",
+    demoActive: "Demo er aktiv. Del posisjon for nøyaktig beregning.",
+    statusHigh: "Rekker trolig",
+    statusMedium: "Mulig, liten margin",
+    statusLow: "Usikkert",
+    minute: "min",
+    hour: "t"
+  },
+  en: {
+    appName: "Ferry Times",
+    usePosition: "Use my location",
+    locating: "Getting location",
+    positionActive: "Location active",
+    refresh: "Refresh",
+    updating: "Updating",
+    finalDestination: "Final destination",
+    destinationPlaceholder: "Type place, address or quay",
+    nextFerry: "Next ferry",
+    normalDrive: "Normal drive time",
+    quayWait: "Wait at quay",
+    showMap: "Show map",
+    closeMap: "Close map",
+    crossing: "Crossing",
+    onwardFromQuay: "After quay",
+    toDestination: "To destination",
+    routeListDestination: "Relevant routes",
+    routeListNearest: "5 nearest routes",
+    noRoutes: "No ferry routes found for position and travel mode.",
+    noDestinationFerry: "No ferry found on the calculated shortest route to the destination.",
+    noCurrentFerry: "No current ferry",
+    noDepartureQuay: "No current departure quay",
+    changeDestinationPosition: "Change destination or position.",
+    chooseRoute: "Choose route",
+    chooseFerryRoute: "Choose ferry route",
+    selectRouteInstruction: "Tap a route in the list to fetch next departure, drive time and crossing.",
+    findNearest: "Find nearest ferry route",
+    sharePosition: "Share location to see the right departure side and whether you can make it.",
+    routesFetched: "Routes fetched",
+    decisionUnavailable: "Could not fetch next departure right now, but the route list is updated.",
+    sourceUnknown: "Unknown",
+    enturUnavailable: "Entur unavailable",
+    fetchError: "Could not fetch authoritative ferry routes right now.",
+    loadingRoutes: "Fetching ferry routes...",
+    selected: "Selected",
+    select: "Select",
+    carFerry: "car ferry",
+    fastBoat: "express boat",
+    toDepartureQuay: "km to departure quay",
+    toQuay: "km to quay",
+    onwardFrom: "onward from",
+    totalRoute: "km total route",
+    ferryOrdinal: (index) => `Ferry ${index + 1}`,
+    routeToDestination: (from, to) => `${from} to ${to}`,
+    routeToQuay: (from) => `To ${from} ferry quay`,
+    loadingRoad: "Fetching route...",
+    vehicle: "Vehicle",
+    arrival: "Arrival",
+    destination: "Destination",
+    routeSummary: (drive, crossing, onward, total) => `To destination: ${drive} to quay + ${crossing} crossing + ${onward} onward = ${total}.`,
+    noGeolocationDemo: "Browser does not support location. Showing demo.",
+    locationFailedDemo: "Could not get location. Showing demo at Halhjem.",
+    demoActive: "Demo is active. Share location for exact calculation.",
+    statusHigh: "Likely to make it",
+    statusMedium: "Possible, tight margin",
+    statusLow: "Uncertain",
+    minute: "min",
+    hour: "h"
+  },
+  de: {
+    appName: "Fährzeiten",
+    usePosition: "Meine Position verwenden",
+    locating: "Position wird ermittelt",
+    positionActive: "Position aktiv",
+    refresh: "Aktualisieren",
+    updating: "Aktualisiert",
+    finalDestination: "Endziel",
+    destinationPlaceholder: "Ort, Adresse oder Kai eingeben",
+    nextFerry: "Nächste Fähre",
+    normalDrive: "Normale Fahrzeit",
+    quayWait: "Wartezeit am Kai",
+    showMap: "Karte anzeigen",
+    closeMap: "Karte schließen",
+    crossing: "Überfahrt",
+    onwardFromQuay: "Weiter ab Kai",
+    toDestination: "Zum Ziel",
+    routeListDestination: "Relevante Verbindungen",
+    routeListNearest: "5 nächste Verbindungen",
+    noRoutes: "Keine Fährverbindungen für Position und Reiseart gefunden.",
+    noDestinationFerry: "Keine Fähre auf der berechneten kürzesten Route zum Ziel gefunden.",
+    noCurrentFerry: "Keine aktuelle Fähre",
+    noDepartureQuay: "Kein aktueller Abfahrtskai",
+    changeDestinationPosition: "Ziel oder Position ändern.",
+    chooseRoute: "Verbindung wählen",
+    chooseFerryRoute: "Fährverbindung wählen",
+    selectRouteInstruction: "Verbindung antippen, um nächste Abfahrt, Fahrzeit und Überfahrt zu laden.",
+    findNearest: "Nächste Fährverbindung finden",
+    sharePosition: "Position teilen, um die richtige Abfahrtsseite und die Erreichbarkeit zu sehen.",
+    routesFetched: "Routen geladen",
+    decisionUnavailable: "Nächste Abfahrt konnte gerade nicht geladen werden, aber die Liste ist aktualisiert.",
+    sourceUnknown: "Unbekannt",
+    enturUnavailable: "Entur nicht verfügbar",
+    fetchError: "Autoritative Fährdaten konnten gerade nicht geladen werden.",
+    loadingRoutes: "Fährverbindungen werden geladen...",
+    selected: "Gewählt",
+    select: "Wählen",
+    carFerry: "Autofähre",
+    fastBoat: "Schnellboot",
+    toDepartureQuay: "km zum Abfahrtskai",
+    toQuay: "km zum Kai",
+    onwardFrom: "weiter ab",
+    totalRoute: "km Gesamtroute",
+    ferryOrdinal: (index) => `${index + 1}. Fähre`,
+    routeToDestination: (from, to) => `${from} nach ${to}`,
+    routeToQuay: (from) => `Zum Fährkai ${from}`,
+    loadingRoad: "Route wird geladen...",
+    vehicle: "Fahrzeug",
+    arrival: "Ankunft",
+    destination: "Ziel",
+    routeSummary: (drive, crossing, onward, total) => `Zum Ziel: ${drive} zum Kai + ${crossing} Überfahrt + ${onward} weiter = ${total}.`,
+    noGeolocationDemo: "Browser unterstützt keine Position. Demo wird angezeigt.",
+    locationFailedDemo: "Position nicht erhalten. Demo bei Halhjem wird angezeigt.",
+    demoActive: "Demo ist aktiv. Position für genaue Berechnung teilen.",
+    statusHigh: "Wahrscheinlich erreichbar",
+    statusMedium: "Möglich, knappe Zeit",
+    statusLow: "Unsicher",
+    minute: "min",
+    hour: "Std."
+  },
+  es: {
+    appName: "Horarios de ferry",
+    usePosition: "Usar mi ubicación",
+    locating: "Obteniendo ubicación",
+    positionActive: "Ubicación activa",
+    refresh: "Actualizar",
+    updating: "Actualizando",
+    finalDestination: "Destino final",
+    destinationPlaceholder: "Escribe lugar, dirección o muelle",
+    nextFerry: "Próximo ferry",
+    normalDrive: "Tiempo normal en coche",
+    quayWait: "Espera en el muelle",
+    showMap: "Ver mapa",
+    closeMap: "Cerrar mapa",
+    crossing: "Travesía",
+    onwardFromQuay: "Después del muelle",
+    toDestination: "Al destino",
+    routeListDestination: "Rutas relevantes",
+    routeListNearest: "5 rutas más cercanas",
+    noRoutes: "No se encontraron rutas de ferry para la posición y modo de viaje.",
+    noDestinationFerry: "No se encontró ferry en la ruta más corta calculada al destino.",
+    noCurrentFerry: "No hay ferry actual",
+    noDepartureQuay: "No hay muelle de salida actual",
+    changeDestinationPosition: "Cambia destino o posición.",
+    chooseRoute: "Elegir ruta",
+    chooseFerryRoute: "Elegir ruta de ferry",
+    selectRouteInstruction: "Toca una ruta para obtener próxima salida, conducción y travesía.",
+    findNearest: "Buscar ruta de ferry cercana",
+    sharePosition: "Comparte ubicación para ver el lado correcto de salida y si llegas a tiempo.",
+    routesFetched: "Rutas cargadas",
+    decisionUnavailable: "No se pudo obtener la próxima salida ahora, pero la lista está actualizada.",
+    sourceUnknown: "Desconocido",
+    enturUnavailable: "Entur no disponible",
+    fetchError: "No se pudieron obtener rutas oficiales de ferry ahora.",
+    loadingRoutes: "Cargando rutas de ferry...",
+    selected: "Elegido",
+    select: "Elegir",
+    carFerry: "ferry para coches",
+    fastBoat: "barco rápido",
+    toDepartureQuay: "km al muelle de salida",
+    toQuay: "km al muelle",
+    onwardFrom: "continuar desde",
+    totalRoute: "km ruta total",
+    ferryOrdinal: (index) => `Ferry ${index + 1}`,
+    routeToDestination: (from, to) => `${from} a ${to}`,
+    routeToQuay: (from) => `Al muelle de ferry ${from}`,
+    loadingRoad: "Cargando ruta...",
+    vehicle: "Vehículo",
+    arrival: "Llegada",
+    destination: "Destino",
+    routeSummary: (drive, crossing, onward, total) => `Al destino: ${drive} al muelle + ${crossing} travesía + ${onward} más = ${total}.`,
+    noGeolocationDemo: "El navegador no admite ubicación. Mostrando demo.",
+    locationFailedDemo: "No se obtuvo ubicación. Mostrando demo en Halhjem.",
+    demoActive: "Demo activa. Comparte ubicación para cálculo exacto.",
+    statusHigh: "Probablemente llegas",
+    statusMedium: "Posible, poco margen",
+    statusLow: "Incierto",
+    minute: "min",
+    hour: "h"
+  },
+  fr: {
+    appName: "Horaires des ferries",
+    usePosition: "Utiliser ma position",
+    locating: "Position en cours",
+    positionActive: "Position active",
+    refresh: "Actualiser",
+    updating: "Mise à jour",
+    finalDestination: "Destination finale",
+    destinationPlaceholder: "Saisir lieu, adresse ou quai",
+    nextFerry: "Prochain ferry",
+    normalDrive: "Temps de route normal",
+    quayWait: "Attente au quai",
+    showMap: "Afficher la carte",
+    closeMap: "Fermer la carte",
+    crossing: "Traversée",
+    onwardFromQuay: "Après le quai",
+    toDestination: "Vers destination",
+    routeListDestination: "Liaisons pertinentes",
+    routeListNearest: "5 liaisons proches",
+    noRoutes: "Aucune liaison ferry trouvée pour la position et le mode de voyage.",
+    noDestinationFerry: "Aucun ferry trouvé sur l’itinéraire le plus court calculé.",
+    noCurrentFerry: "Aucun ferry actuel",
+    noDepartureQuay: "Aucun quai de départ actuel",
+    changeDestinationPosition: "Changer destination ou position.",
+    chooseRoute: "Choisir liaison",
+    chooseFerryRoute: "Choisir ferry",
+    selectRouteInstruction: "Touchez une liaison pour charger départ, trajet et traversée.",
+    findNearest: "Trouver le ferry le plus proche",
+    sharePosition: "Partagez la position pour voir le bon quai et si vous arrivez à temps.",
+    routesFetched: "Liaisons chargées",
+    decisionUnavailable: "Impossible de charger le prochain départ, mais la liste est à jour.",
+    sourceUnknown: "Inconnu",
+    enturUnavailable: "Entur indisponible",
+    fetchError: "Impossible de charger les données ferry officielles.",
+    loadingRoutes: "Chargement des ferries...",
+    selected: "Choisi",
+    select: "Choisir",
+    carFerry: "ferry voiture",
+    fastBoat: "bateau rapide",
+    toDepartureQuay: "km au quai de départ",
+    toQuay: "km au quai",
+    onwardFrom: "suite depuis",
+    totalRoute: "km trajet total",
+    ferryOrdinal: (index) => `Ferry ${index + 1}`,
+    routeToDestination: (from, to) => `${from} vers ${to}`,
+    routeToQuay: (from) => `Vers le quai ferry ${from}`,
+    loadingRoad: "Chargement de l’itinéraire...",
+    vehicle: "Véhicule",
+    arrival: "Arrivée",
+    destination: "Destination",
+    routeSummary: (drive, crossing, onward, total) => `Vers destination : ${drive} au quai + ${crossing} traversée + ${onward} ensuite = ${total}.`,
+    noGeolocationDemo: "Le navigateur ne prend pas en charge la position. Démo affichée.",
+    locationFailedDemo: "Position non obtenue. Démo à Halhjem.",
+    demoActive: "Démo active. Partagez la position pour un calcul exact.",
+    statusHigh: "Probablement à temps",
+    statusMedium: "Possible, marge faible",
+    statusLow: "Incertain",
+    minute: "min",
+    hour: "h"
+  },
+  it: {
+    appName: "Orari traghetti",
+    usePosition: "Usa la mia posizione",
+    locating: "Rilevamento posizione",
+    positionActive: "Posizione attiva",
+    refresh: "Aggiorna",
+    updating: "Aggiornamento",
+    finalDestination: "Destinazione finale",
+    destinationPlaceholder: "Scrivi luogo, indirizzo o molo",
+    nextFerry: "Prossimo traghetto",
+    normalDrive: "Tempo normale in auto",
+    quayWait: "Attesa al molo",
+    showMap: "Mostra mappa",
+    closeMap: "Chiudi mappa",
+    crossing: "Traversata",
+    onwardFromQuay: "Dopo il molo",
+    toDestination: "Alla destinazione",
+    routeListDestination: "Collegamenti rilevanti",
+    routeListNearest: "5 collegamenti vicini",
+    noRoutes: "Nessun collegamento ferry trovato per posizione e modalità.",
+    noDestinationFerry: "Nessun traghetto trovato sul percorso più breve calcolato.",
+    noCurrentFerry: "Nessun traghetto attuale",
+    noDepartureQuay: "Nessun molo di partenza attuale",
+    changeDestinationPosition: "Cambia destinazione o posizione.",
+    chooseRoute: "Scegli collegamento",
+    chooseFerryRoute: "Scegli traghetto",
+    selectRouteInstruction: "Tocca un collegamento per caricare partenza, guida e traversata.",
+    findNearest: "Trova il traghetto più vicino",
+    sharePosition: "Condividi la posizione per vedere il molo corretto e se arrivi in tempo.",
+    routesFetched: "Collegamenti caricati",
+    decisionUnavailable: "Impossibile caricare la prossima partenza, ma la lista è aggiornata.",
+    sourceUnknown: "Sconosciuto",
+    enturUnavailable: "Entur non disponibile",
+    fetchError: "Impossibile caricare dati ufficiali dei traghetti.",
+    loadingRoutes: "Caricamento collegamenti...",
+    selected: "Scelto",
+    select: "Scegli",
+    carFerry: "traghetto auto",
+    fastBoat: "aliscafo",
+    toDepartureQuay: "km al molo di partenza",
+    toQuay: "km al molo",
+    onwardFrom: "prosegue da",
+    totalRoute: "km percorso totale",
+    ferryOrdinal: (index) => `Traghetto ${index + 1}`,
+    routeToDestination: (from, to) => `${from} a ${to}`,
+    routeToQuay: (from) => `Al molo traghetti ${from}`,
+    loadingRoad: "Caricamento percorso...",
+    vehicle: "Veicolo",
+    arrival: "Arrivo",
+    destination: "Destinazione",
+    routeSummary: (drive, crossing, onward, total) => `Alla destinazione: ${drive} al molo + ${crossing} traversata + ${onward} oltre = ${total}.`,
+    noGeolocationDemo: "Il browser non supporta la posizione. Demo mostrata.",
+    locationFailedDemo: "Posizione non ottenuta. Demo a Halhjem.",
+    demoActive: "Demo attiva. Condividi posizione per calcolo esatto.",
+    statusHigh: "Probabilmente arrivi",
+    statusMedium: "Possibile, poco margine",
+    statusLow: "Incerto",
+    minute: "min",
+    hour: "h"
+  }
+};
+
+const ARIA_TRANSLATIONS = {
+  no: {
+    languageChoice: "Velg språk",
+    openMain: "Åpne hovedside",
+    status: "Status",
+    start: "Start",
+    travelOnward: "Reise videre",
+    alerts: "Varsler",
+    map: "Kart",
+    routeMap: "Kart over valgt rute",
+    zoom: "Zoom"
+  },
+  en: {
+    languageChoice: "Choose language",
+    openMain: "Open main page",
+    status: "Status",
+    start: "Start",
+    travelOnward: "Continue journey",
+    alerts: "Alerts",
+    map: "Map",
+    routeMap: "Map of selected route",
+    zoom: "Zoom"
+  },
+  de: {
+    languageChoice: "Sprache wählen",
+    openMain: "Hauptseite öffnen",
+    status: "Status",
+    start: "Start",
+    travelOnward: "Weiterreise",
+    alerts: "Hinweise",
+    map: "Karte",
+    routeMap: "Karte der gewählten Route",
+    zoom: "Zoom"
+  },
+  es: {
+    languageChoice: "Elegir idioma",
+    openMain: "Abrir página principal",
+    status: "Estado",
+    start: "Inicio",
+    travelOnward: "Continuar viaje",
+    alerts: "Avisos",
+    map: "Mapa",
+    routeMap: "Mapa de la ruta elegida",
+    zoom: "Zoom"
+  },
+  fr: {
+    languageChoice: "Choisir la langue",
+    openMain: "Ouvrir la page principale",
+    status: "Statut",
+    start: "Départ",
+    travelOnward: "Suite du trajet",
+    alerts: "Alertes",
+    map: "Carte",
+    routeMap: "Carte de l’itinéraire choisi",
+    zoom: "Zoom"
+  },
+  it: {
+    languageChoice: "Scegli lingua",
+    openMain: "Apri pagina principale",
+    status: "Stato",
+    start: "Avvio",
+    travelOnward: "Proseguimento",
+    alerts: "Avvisi",
+    map: "Mappa",
+    routeMap: "Mappa del percorso scelto",
+    zoom: "Zoom"
+  }
+};
+
 const elements = {
   frontPage: document.querySelector("#frontPage"),
   appShell: document.querySelector("#appShell"),
   enterAppButton: document.querySelector("#enterAppButton"),
+  languageButtons: [...document.querySelectorAll(".language-option")],
   locateButton: document.querySelector("#locateButton"),
   refreshButton: document.querySelector("#refreshButton"),
   statusPill: document.querySelector("#statusPill"),
@@ -56,6 +490,9 @@ const elements = {
   zoomOutButton: document.querySelector("#zoomOutButton")
 };
 
+elements.languageButtons.forEach((button) => {
+  button.addEventListener("click", () => setLanguage(button.dataset.language || "no"));
+});
 elements.enterAppButton.addEventListener("click", enterApp);
 elements.locateButton.addEventListener("click", locate);
 elements.refreshButton.addEventListener("click", refresh);
@@ -76,8 +513,48 @@ disableServiceWorkerCache();
 initialize();
 
 function initialize() {
+  setLanguage(state.language, { persist: false });
   seedDemo();
   renderRouteLoading();
+}
+
+function t(key, ...args) {
+  const value = (TRANSLATIONS[state.language] || TRANSLATIONS.no)[key] ?? TRANSLATIONS.no[key] ?? key;
+  return typeof value === "function" ? value(...args) : value;
+}
+
+function tAria(key) {
+  return (ARIA_TRANSLATIONS[state.language] || ARIA_TRANSLATIONS.no)[key] ?? ARIA_TRANSLATIONS.no[key] ?? key;
+}
+
+function setLanguage(language, options = {}) {
+  state.language = TRANSLATIONS[language] ? language : "no";
+  if (options.persist !== false) localStorage.setItem("ferge-na-language", state.language);
+  document.documentElement.lang = state.language;
+  elements.languageButtons.forEach((button) => {
+    const active = button.dataset.language === state.language;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  applyTranslations();
+  renderRoutes();
+}
+
+function applyTranslations() {
+  document.querySelectorAll("[data-i18n]").forEach((node) => {
+    node.textContent = t(node.dataset.i18n);
+  });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((node) => {
+    node.setAttribute("placeholder", t(node.dataset.i18nPlaceholder));
+  });
+  document.querySelectorAll("[data-i18n-aria]").forEach((node) => {
+    node.setAttribute("aria-label", tAria(node.dataset.i18nAria));
+  });
+  if (!state.position) {
+    elements.statusPill.textContent = t("noCurrentFerry");
+    elements.routeName.textContent = t("findNearest");
+    elements.recommendation.textContent = t("sharePosition");
+  }
 }
 
 async function enterApp() {
@@ -87,12 +564,12 @@ async function enterApp() {
 }
 
 async function locate() {
-  setLoading("Henter posisjon");
+  setLoading(t("locating"));
   elements.locateButton.disabled = true;
-  elements.locateButton.textContent = "Henter posisjon";
+  elements.locateButton.textContent = t("locating");
 
   if (!navigator.geolocation) {
-    await setDemoPosition("Nettleseren støtter ikke posisjon. Viser demo.");
+    await setDemoPosition(t("noGeolocationDemo"));
     elements.locateButton.disabled = false;
     return;
   }
@@ -103,13 +580,13 @@ async function locate() {
         lat: position.coords.latitude,
         lon: position.coords.longitude
       };
-      elements.locateButton.textContent = "Posisjon aktiv";
+      elements.locateButton.textContent = t("positionActive");
       elements.locateButton.disabled = false;
       await refresh();
     },
     async () => {
-      await setDemoPosition("Fikk ikke posisjon. Viser demo ved Halhjem.");
-      elements.locateButton.textContent = "Bruk min posisjon";
+      await setDemoPosition(t("locationFailedDemo"));
+      elements.locateButton.textContent = t("usePosition");
       elements.locateButton.disabled = false;
     },
     { enableHighAccuracy: true, timeout: 8000, maximumAge: 15000 }
@@ -124,19 +601,19 @@ async function setDemoPosition(message) {
 
 async function refresh() {
   if (!state.position) {
-    await setDemoPosition("Demo er aktiv. Del posisjon for nøyaktig beregning.");
+    await setDemoPosition(t("demoActive"));
     return;
   }
 
   try {
-    setLoading("Oppdaterer");
+    setLoading(t("updating"));
     renderRouteLoading();
     const nearby = await fetchNearbyRoutes(true);
     const destinationFiltered = Boolean(state.destination);
 
     state.routes = nearby.routes || [];
-    elements.routeListTitle.textContent = destinationFiltered ? "Aktuelle samband" : "5 nærmeste samband";
-    elements.sourceLabel.textContent = `${nearby.source === "entur-authoritative" ? "Entur" : "Ukjent"} · ${APP_VERSION}`;
+    elements.routeListTitle.textContent = destinationFiltered ? t("routeListDestination") : t("routeListNearest");
+    elements.sourceLabel.textContent = `${nearby.source === "entur-authoritative" ? "Entur" : t("sourceUnknown")} · ${APP_VERSION}`;
 
     if (state.selectedTerminalId && !state.routes.some((route) => route.id === state.selectedTerminalId)) {
       state.selectedTerminalId = null;
@@ -145,7 +622,7 @@ async function refresh() {
     renderRoutes();
     if (!state.routes.length) {
       clearDecision(destinationFiltered
-        ? "Fant ingen ferge på beregnet korteste rute til destinasjonen."
+        ? t("noDestinationFerry")
         : null);
       renderAlerts([]);
       return;
@@ -160,9 +637,9 @@ async function refresh() {
   } catch (error) {
     state.routes = [];
     state.selectedTerminalId = null;
-    elements.routeListTitle.textContent = "5 nærmeste samband";
-    elements.sourceLabel.textContent = `Entur utilgjengelig · ${APP_VERSION}`;
-    renderRoutes("Kunne ikke hente autoritative fergestrekninger akkurat nå.");
+    elements.routeListTitle.textContent = t("routeListNearest");
+    elements.sourceLabel.textContent = `${t("enturUnavailable")} · ${APP_VERSION}`;
+    renderRoutes(t("fetchError"));
     clearDecision();
     renderAlerts([]);
   }
@@ -173,12 +650,12 @@ async function updateDecisionSafe() {
   try {
     await updateDecision();
   } catch (error) {
-    elements.statusPill.textContent = "Ruter hentet";
+    elements.statusPill.textContent = t("routesFetched");
     elements.statusPill.className = "status-pill medium";
     elements.routeName.textContent = selectedRoute
       ? `${selectedRoute.sideName} ferjekai`
-      : "Ingen aktuell avgangskai";
-    elements.recommendation.textContent = "Kunne ikke hente neste avgang akkurat nå, men sambandslisten er oppdatert.";
+      : t("noDepartureQuay");
+    elements.recommendation.textContent = t("decisionUnavailable");
     elements.departureTime.textContent = "--:--";
     elements.normalDriveTime.textContent = "--";
     elements.margin.textContent = "--";
@@ -197,26 +674,26 @@ async function updateAlertsSafe() {
 }
 
 function clearDecision(message = null) {
-  elements.statusPill.textContent = "Ingen aktuell ferge";
+  elements.statusPill.textContent = t("noCurrentFerry");
   elements.statusPill.className = "status-pill low";
   elements.departureTime.textContent = "--:--";
   elements.normalDriveTime.textContent = "--";
   elements.margin.textContent = "--";
-  elements.routeName.textContent = "Ingen aktuell avgangskai";
-  elements.recommendation.textContent = message || "Endre destinasjon eller posisjon.";
+  elements.routeName.textContent = t("noDepartureQuay");
+  elements.recommendation.textContent = message || t("changeDestinationPosition");
   elements.crossingTime.textContent = "--";
   renderDestinationMetrics(null);
   hideMapButton();
 }
 
 function promptForRouteSelection() {
-  elements.statusPill.textContent = "Velg samband";
+  elements.statusPill.textContent = t("chooseRoute");
   elements.statusPill.className = "status-pill";
   elements.departureTime.textContent = "--:--";
   elements.normalDriveTime.textContent = "--";
   elements.margin.textContent = "--";
-  elements.routeName.textContent = "Velg fergestrekning";
-  elements.recommendation.textContent = "Trykk på ønsket samband i listen for å hente neste avgang, kjøretid og overfart.";
+  elements.routeName.textContent = t("chooseFerryRoute");
+  elements.recommendation.textContent = t("selectRouteInstruction");
   elements.crossingTime.textContent = "--";
   renderDestinationMetrics(null);
   hideMapButton();
@@ -236,7 +713,7 @@ async function updateDecision() {
   const decision = payload.decision;
   if (!decision) return;
 
-  elements.statusPill.textContent = decision.status;
+  elements.statusPill.textContent = formatDecisionStatus(decision);
   elements.statusPill.className = `status-pill ${decision.confidence}`;
   elements.updatedAt.textContent = new Date(decision.now).toLocaleTimeString("no-NO", {
     hour: "2-digit",
@@ -246,7 +723,7 @@ async function updateDecision() {
   elements.normalDriveTime.textContent = formatMinutes(decision.drive.normalMinutes);
   elements.margin.textContent = formatMinutes(decision.quayWaitMinutes);
   elements.routeName.textContent = `${decision.sideName} ferjekai`;
-  elements.recommendation.textContent = decision.recommendation;
+  elements.recommendation.textContent = formatDecisionRecommendation(decision);
   elements.crossingTime.textContent = formatMinutes(decision.crossingMinutes);
   renderDestinationMetrics(decision.destinationSummary);
   showMapButton();
@@ -292,10 +769,27 @@ function renderDestinationMetrics(summary) {
 function formatMinutes(value) {
   if (!Number.isFinite(value)) return "--";
   const minutes = Math.max(0, Math.round(value));
-  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 60) return `${minutes} ${t("minute")}`;
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
-  return rest ? `${hours} t ${rest} min` : `${hours} t`;
+  return rest ? `${hours} ${t("hour")} ${rest} ${t("minute")}` : `${hours} ${t("hour")}`;
+}
+
+function formatDecisionRecommendation(decision) {
+  if (!decision.destinationSummary) return decision.recommendation;
+  return t(
+    "routeSummary",
+    formatMinutes(decision.drive.normalMinutes),
+    formatMinutes(decision.crossingMinutes),
+    formatMinutes(decision.destinationSummary.onwardDrive.normalMinutes),
+    formatMinutes(decision.destinationSummary.totalNormalMinutes)
+  );
+}
+
+function formatDecisionStatus(decision) {
+  if (decision.confidence === "high") return t("statusHigh");
+  if (decision.confidence === "medium") return t("statusMedium");
+  return t("statusLow");
 }
 
 function showMapButton() {
@@ -312,8 +806,8 @@ async function showMap() {
   if (!state.position || !route) return;
 
   elements.mapTitle.textContent = state.destination
-    ? `${route.sideName} til ${state.destination.name || "destinasjon"}`
-    : `Til ${route.sideName} ferjekai`;
+    ? t("routeToDestination", route.sideName, state.destination.name || t("destination"))
+    : t("routeToQuay", route.sideName);
   state.map.points = buildMapPoints(route);
   state.map.path = [];
   state.map.selectedRouteId = route.id;
@@ -321,6 +815,7 @@ async function showMap() {
   state.map.followVehicle = true;
   elements.mapSheet.hidden = false;
   elements.mapCanvas.innerHTML = '<div class="map-loading">Henter vei...</div>';
+  elements.mapCanvas.querySelector(".map-loading").textContent = t("loadingRoad");
 
   try {
     const path = await fetchMapPath(route);
@@ -349,7 +844,7 @@ function buildMapPoints(route) {
       lat: state.position.lat,
       lon: state.position.lon,
       type: "vehicle",
-      label: "Kjøretøy",
+      label: t("vehicle"),
       heading: null,
       accuracy: null
     },
@@ -366,14 +861,14 @@ function buildMapPoints(route) {
         lat: route.arrivalLat,
         lon: route.arrivalLon,
         type: "arrival",
-        label: `${route.arrivalSideName || route.oppositeSideName || "Ankomst"} ferjekai`
+      label: `${route.arrivalSideName || route.oppositeSideName || t("arrival")} ferjekai`
       });
     }
     points.push({
       lat: state.destination.lat,
       lon: state.destination.lon,
       type: "destination",
-      label: state.destination.name || "Destinasjon"
+      label: state.destination.name || t("destination")
     });
   }
   return points;
@@ -614,7 +1109,7 @@ function renderRoutes(errorMessage = "") {
   if (!state.routes.length) {
     const empty = document.createElement("div");
     empty.className = "empty-routes";
-    empty.textContent = errorMessage || "Ingen fergestrekninger funnet for posisjon og reisemåte.";
+    empty.textContent = errorMessage || t("noRoutes");
     elements.routeList.append(empty);
     return;
   }
@@ -629,7 +1124,7 @@ function renderRoutes(errorMessage = "") {
         <strong>${escapeHtml(formatRouteTitle(route, index))}</strong>
         <span>${escapeHtml(formatRouteMeta(route))}</span>
       </span>
-      <em>${route.id === state.selectedTerminalId ? "Valgt" : "Velg"}</em>
+      <em>${route.id === state.selectedTerminalId ? t("selected") : t("select")}</em>
     `;
     button.addEventListener("click", async () => {
       renderDestinationSuggestions([]);
@@ -643,11 +1138,11 @@ function renderRoutes(errorMessage = "") {
 }
 
 function renderRouteLoading() {
-  elements.routeListTitle.textContent = "5 nærmeste samband";
+  elements.routeListTitle.textContent = t("routeListNearest");
   elements.routeList.innerHTML = "";
   const loading = document.createElement("div");
   loading.className = "empty-routes";
-  loading.textContent = "Henter fergestrekninger...";
+  loading.textContent = t("loadingRoutes");
   elements.routeList.append(loading);
 }
 
@@ -656,21 +1151,21 @@ function getSelectedRoute() {
 }
 
 function formatRouteDescriptor(route) {
-  const type = route.transportSubmode === "localCarFerry" ? "bilferge" : "hurtigbåt";
+  const type = route.transportSubmode === "localCarFerry" ? t("carFerry") : t("fastBoat");
   return route.routeCode ? `${type} ${route.routeCode}` : type;
 }
 
 function formatRouteTitle(route, index) {
   if (!state.destination) return `${route.sideName} ferjekai`;
-  return `${index + 1} ferge: ${route.ferryLegLabel || `${route.sideName}-${route.oppositeSideName}`}`;
+  return `${t("ferryOrdinal", index)}: ${route.ferryLegLabel || `${route.sideName}-${route.oppositeSideName}`}`;
 }
 
 function formatRouteMeta(route) {
   const descriptor = formatRouteDescriptor(route);
-  if (!state.destination) return `${descriptor} · ${route.distanceKm} km til avgangskai`;
-  const total = Number.isFinite(route.totalRouteKm) ? ` · ${route.totalRouteKm} km total rute` : "";
-  const arrival = route.arrivalSideName ? ` · videre fra ${route.arrivalSideName}` : "";
-  return `${descriptor} · ${route.distanceKm} km til kai${arrival}${total}`;
+  if (!state.destination) return `${descriptor} · ${route.distanceKm} ${t("toDepartureQuay")}`;
+  const total = Number.isFinite(route.totalRouteKm) ? ` · ${route.totalRouteKm} ${t("totalRoute")}` : "";
+  const arrival = route.arrivalSideName ? ` · ${t("onwardFrom")} ${route.arrivalSideName}` : "";
+  return `${descriptor} · ${route.distanceKm} ${t("toQuay")}${arrival}${total}`;
 }
 
 function handleDestinationInput() {
