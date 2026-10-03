@@ -695,22 +695,48 @@ async function buildDestinationCandidates(sourceRoutes, origin, destination, tra
   const pathCandidates = routePath?.points?.length && routePath.source !== "fallback-straight"
     ? buildRoutePathFerryCandidates(sourceRoutes, routePath.points, directDrive)
     : [];
-  const pathSequence = await buildRoutePathSequence(pathCandidates, sourceRoutes, origin, destination, directDrive, travelMode);
+  const rawPathSequence = await buildRoutePathSequence(pathCandidates, sourceRoutes, origin, destination, directDrive, travelMode, {
+    allowOffMainLocalStart: true
+  });
   const bestSequence = await buildBestEvaluatedFerrySequence(sourceRoutes, origin, destination, directDrive, travelMode);
-  return chooseShortestCandidateSequence(pathSequence, bestSequence);
+  const priorityReplacementSequence = await buildPriorityReplacementSequence(rawPathSequence, sourceRoutes, origin, destination, directDrive, travelMode);
+  const pathSequence = await sequenceStartsWithOffMainLocalFerry(rawPathSequenceToEvaluation(rawPathSequence), sourceRoutes, origin, destination, travelMode)
+    ? []
+    : rawPathSequence;
+  return chooseShortestCandidateSequence(pathSequence, bestSequence, priorityReplacementSequence);
 }
 
 function chooseShortestCandidateSequence(...sequences) {
   const valid = sequences.filter((sequence) => sequence.length);
   if (!valid.length) return [];
   return valid.sort((a, b) => {
+    const aPriority = sequenceTrafficPriority(a);
+    const bPriority = sequenceTrafficPriority(b);
     const aKm = a[0].totalRouteKm ?? Infinity;
     const bKm = b[0].totalRouteKm ?? Infinity;
-    if (Math.abs(aKm - bKm) > 5) return aKm - bKm;
     const aMin = a[0].totalNormalMinutes ?? Infinity;
     const bMin = b[0].totalNormalMinutes ?? Infinity;
+    if (Math.abs(aPriority - bPriority) >= 0.3 && Math.abs(aMin - bMin) <= 90) return bPriority - aPriority;
+    if (Math.abs(aKm - bKm) > 5) return aKm - bKm;
     return aMin - bMin;
   })[0];
+}
+
+function sequenceTrafficPriority(sequence) {
+  return sequence.reduce((sum, candidate) => sum + ferryTrafficPriority(candidate), 0);
+}
+
+function ferryTrafficPriority(candidate) {
+  const code = Number(String(candidate.routeCode || "").match(/\d+/)?.[0] || 0);
+  const name = `${candidate.routeName || ""} ${candidate.ferryLegLabel || ""}`;
+  if (/Halhjem|Sandvikvåg|Sandvikvag/i.test(name)) return 2.6;
+  if (/Mortavika|Arsvågen|Arsvagen/i.test(name)) return 2.2;
+  if (/Lavik|Oppedal/i.test(name)) return 1.8;
+  if (/Moss|Horten/i.test(name)) return 2;
+  if (/Hodnanes|Jektavik|Nedstrand|Judaberg/i.test(name)) return 0.25;
+  if (code >= 1000) return 0.9;
+  if (code >= 100) return 0.35;
+  return 0;
 }
 
 async function buildBestEvaluatedFerrySequence(sourceRoutes, origin, destination, directDrive, travelMode) {
@@ -727,7 +753,7 @@ async function buildBestEvaluatedFerrySequence(sourceRoutes, origin, destination
     const oneLeg = await evaluateFerrySequence([first], origin, destination, directDrive, drive);
     if (oneLeg) evaluated.push(oneLeg);
     for (const second of legs) {
-      if (!canFollowFerryLeg(first, second)) continue;
+      if (!canFollowFerryLeg(first, second, destination)) continue;
       const twoLegs = await evaluateFerrySequence([first, second], origin, destination, directDrive, drive);
       if (twoLegs) evaluated.push(twoLegs);
     }
@@ -737,6 +763,8 @@ async function buildBestEvaluatedFerrySequence(sourceRoutes, origin, destination
   let best = null;
   for (const candidate of candidates) {
     if (await sequenceHasHiddenFerry(candidate, sourceRoutes, travelMode)) continue;
+    if (await sequenceStartsWithOffMainLocalFerry(candidate, sourceRoutes, origin, destination, travelMode)) continue;
+    if (await sequenceSkipsMainRouteFerry(candidate, sourceRoutes, destination, travelMode)) continue;
     best = candidate;
     break;
   }
@@ -750,7 +778,64 @@ async function buildBestEvaluatedFerrySequence(sourceRoutes, origin, destination
   return sequenceToRouteCandidates(best, directDrive);
 }
 
-async function buildRoutePathSequence(pathCandidates, sourceRoutes, origin, destination, directDrive, travelMode) {
+async function buildPriorityReplacementSequence(existingSequence, sourceRoutes, origin, destination, directDrive, travelMode) {
+  if (existingSequence.length < 2) return [];
+  const first = existingSequence[0];
+  const next = existingSequence[1];
+  if (ferryTrafficPriority(first) >= 1 || ferryTrafficPriority(next) < 1) return [];
+
+  const nextLeg = routeCandidateToFerryLeg(next);
+  if (!nextLeg) return [];
+
+  const alternatives = buildDirectedFerryLegs(sourceRoutes, origin, destination)
+    .filter((leg) => leg.departure.routeId !== first.routeId)
+    .filter((leg) => ferryTrafficPriority(leg.departure) > ferryTrafficPriority(first) + 1)
+    .filter((leg) => distanceKm(origin, leg.departure) < 90)
+    .filter((leg) => distanceKm(leg.arrival, nextLeg.departure) < 150)
+    .sort((a, b) => ferryTrafficPriority(b.departure) - ferryTrafficPriority(a.departure));
+
+  const driveCache = new Map();
+  let best = null;
+  for (const alternative of alternatives.slice(0, 8)) {
+    const sequence = await evaluateFerrySequence([alternative, nextLeg], origin, destination, directDrive, cachedDrive(driveCache, travelMode));
+    if (!sequence) continue;
+    if (await sequenceHasHiddenFerry(sequence, sourceRoutes, travelMode)) continue;
+    if (await sequenceStartsWithOffMainLocalFerry(sequence, sourceRoutes, origin, destination, travelMode)) continue;
+    if (await sequenceSkipsMainRouteFerry(sequence, sourceRoutes, destination, travelMode)) continue;
+    if (!best || sequence.score < best.score) best = sequence;
+  }
+
+  return best ? sequenceToRouteCandidates(best, directDrive) : [];
+}
+
+function routeCandidateToFerryLeg(candidate) {
+  if (!Number.isFinite(candidate.arrivalLat) || !Number.isFinite(candidate.arrivalLon)) return null;
+  const ferryLegKm = candidate.ferryLegKm || distanceKm(candidate, { lat: candidate.arrivalLat, lon: candidate.arrivalLon });
+  return {
+    departure: candidate,
+    arrival: {
+      id: candidate.arrivalId || `${candidate.routeId}:arrival`,
+      name: `${candidate.arrivalSideName || candidate.oppositeSideName || "Ankomst"} ferjekai`,
+      lat: candidate.arrivalLat,
+      lon: candidate.arrivalLon
+    },
+    ferryLegKm,
+    crossingMinutes: estimateFerryCrossingMinutes(candidate.routeId, ferryLegKm),
+    departureProgress: candidate.relevanceScore || 0,
+    arrivalProgress: candidate.arrivalPathKm ?? (candidate.relevanceScore || 0) + ferryLegKm,
+    heuristicScore: candidate.relevanceScore || 0
+  };
+}
+
+function rawPathSequenceToEvaluation(sequence) {
+  return {
+    legs: sequence
+      .map((candidate) => routeCandidateToFerryLeg(candidate))
+      .filter(Boolean)
+  };
+}
+
+async function buildRoutePathSequence(pathCandidates, sourceRoutes, origin, destination, directDrive, travelMode, options = {}) {
   const ordered = pathCandidates
     .sort((a, b) => a.relevanceScore - b.relevanceScore)
     .filter((candidate, index, candidates) => candidates.findIndex((item) => item.routeId === candidate.routeId) === index);
@@ -777,6 +862,8 @@ async function buildRoutePathSequence(pathCandidates, sourceRoutes, origin, dest
   const sequence = await evaluateFerrySequence(legs, origin, destination, directDrive, cachedDrive(driveCache, travelMode));
   if (!sequence) return [];
   if (await sequenceHasHiddenFerry(sequence, sourceRoutes, travelMode)) return [];
+  if (!options.allowOffMainLocalStart && await sequenceStartsWithOffMainLocalFerry(sequence, sourceRoutes, origin, destination, travelMode)) return [];
+  if (await sequenceSkipsMainRouteFerry(sequence, sourceRoutes, destination, travelMode)) return [];
   return sequenceToRouteCandidates(sequence, directDrive);
 }
 
@@ -855,9 +942,12 @@ function buildDirectedFerryLegs(sourceRoutes, origin, destination) {
   return legs;
 }
 
-function canFollowFerryLeg(first, second) {
+function canFollowFerryLeg(first, second, destination) {
   if (first.departure.routeId === second.departure.routeId) return false;
-  return second.departureProgress > first.arrivalProgress + 0.03;
+  if (second.departureProgress > first.arrivalProgress + 0.03) return true;
+  const roadGapKm = distanceKm(first.arrival, second.departure);
+  const improvesDestination = distanceKm(second.arrival, destination) + 3 < distanceKm(first.arrival, destination);
+  return roadGapKm < 170 && improvesDestination;
 }
 
 function estimateFerryCrossingMinutes(routeId, ferryLegKm) {
@@ -900,7 +990,8 @@ async function evaluateFerrySequence(legs, origin, destination, directDrive, dri
       totalMinutes,
       totalKm,
       routePathMatched: totalMinutes <= directMinutes + 8,
-      score: totalMinutes + totalKm * 0.03 + legs.length * 2
+      trafficPriority: legs.reduce((sum, leg) => sum + ferryTrafficPriority(leg.departure), 0),
+      score: totalMinutes + totalKm * 0.03 + legs.length * 2 - legs.reduce((sum, leg) => sum + ferryTrafficPriority(leg.departure), 0) * 65
     };
   } catch {
     return null;
@@ -921,6 +1012,58 @@ async function sequenceHasHiddenFerry(sequence, sourceRoutes, travelMode) {
     const hidden = buildRoutePathFerryCandidates(sourceRoutes, path.points, null)
       .filter((candidate) => !explicitRouteIds.has(candidate.routeId));
     if (hidden.length) return true;
+  }
+  return false;
+}
+
+async function sequenceStartsWithOffMainLocalFerry(sequence, sourceRoutes, origin, destination, travelMode) {
+  if (sequence.legs.length < 2) return false;
+  const first = sequence.legs[0].departure;
+  if (ferryTrafficPriority(first) >= 1) return false;
+  if (sequence.legs.slice(1).some((leg) => ferryTrafficPriority(leg.departure) >= 1)) return true;
+
+  let path = null;
+  try {
+    path = await getRoutePath(origin, destination, travelMode);
+  } catch {
+    path = null;
+  }
+  if (!path?.points?.length || path.source === "fallback-straight") return false;
+
+  const pathIndex = buildPathIndex(path.points);
+  const firstMatch = nearestPointOnPath(first, pathIndex);
+  const mainRouteIds = new Set(buildRoutePathFerryCandidates(sourceRoutes, path.points, null).map((candidate) => candidate.routeId));
+  return !mainRouteIds.has(first.routeId) && (firstMatch?.distanceKm ?? Infinity) > 6;
+}
+
+async function sequenceSkipsMainRouteFerry(sequence, sourceRoutes, destination, travelMode) {
+  const explicitRouteIds = new Set(sequence.legs.map((leg) => leg.departure.routeId));
+  for (let i = 0; i < sequence.legs.length - 1; i += 1) {
+    const currentArrival = sequence.legs[i].arrival;
+    const nextSelected = sequence.legs[i + 1].departure;
+    let path = null;
+    try {
+      path = await getRoutePath(currentArrival, destination, travelMode);
+    } catch {
+      path = null;
+    }
+    if (!path?.points?.length || path.source === "fallback-straight") continue;
+
+    const pathIndex = buildPathIndex(path.points);
+    const mainRouteFerries = buildRoutePathFerryCandidates(sourceRoutes, path.points, null)
+      .filter((candidate) => !explicitRouteIds.has(candidate.routeId))
+      .sort((a, b) => a.relevanceScore - b.relevanceScore);
+    const nextSelectedMatch = nearestPointOnPath(nextSelected, pathIndex);
+    const nextSelectedAlongKm = nextSelectedMatch?.alongKm ?? Infinity;
+    const skipped = mainRouteFerries.find((candidate) => {
+      const candidatePriority = ferryTrafficPriority(candidate);
+      const selectedPriority = ferryTrafficPriority(nextSelected);
+      const mainRouteIsPreferred = candidatePriority >= Math.max(1, selectedPriority + 0.4);
+      const selectedIsOffMainRoute = (nextSelectedMatch?.distanceKm ?? Infinity) > 6;
+      const mainRouteFerryIsNearby = candidate.relevanceScore < nextSelectedAlongKm + 12;
+      return mainRouteIsPreferred && (selectedIsOffMainRoute || mainRouteFerryIsNearby);
+    });
+    if (skipped) return true;
   }
   return false;
 }

@@ -17,7 +17,7 @@ const state = {
   }
 };
 
-const APP_VERSION = "v41";
+const APP_VERSION = "v42";
 const API_BASE =
   window.location.hostname === "localhost" && window.location.port === "3000"
     ? "http://localhost:3002"
