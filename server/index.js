@@ -105,7 +105,7 @@ function nextDepartures(intervalMinutes, count = 5, now = new Date()) {
   const start = new Date(now);
   start.setSeconds(0, 0);
   const minutes = start.getMinutes();
-  const nextSlot = Math.ceil(minutes / intervalMinutes) * intervalMinutes;
+  const nextSlot = Math.floor(minutes / intervalMinutes) * intervalMinutes + intervalMinutes;
   start.setMinutes(nextSlot);
   const departures = [];
   for (let i = 0; i < count; i += 1) {
@@ -517,11 +517,19 @@ function buildDecision(route, drive, enturSchedule = {}, now = new Date(), desti
   const bufferMinutes = Math.max(2, Math.min(12, Math.ceil(drive.durationMinutes * 0.12)));
   const neededMinutes = drive.durationMinutes + bufferMinutes;
   const departuresFromEntur = enturSchedule.departures || [];
-  const departures = departuresFromEntur.length ? departuresFromEntur : nextDepartures(meta.intervalMinutes, 6, now);
+  const futureEnturDepartures = departuresFromEntur.filter((departure) => departure.getTime() > now.getTime());
+  const departures = futureEnturDepartures.length ? futureEnturDepartures : nextDepartures(meta.intervalMinutes, 6, now);
   const reachable = departures.find((departure) => {
     const minutesUntil = Math.floor((departure.getTime() - now.getTime()) / 60_000);
     return minutesUntil - neededMinutes >= -3;
   }) || departures[departures.length - 1];
+  const upcomingDepartures = departures
+    .filter((departure) => departure.getTime() >= reachable.getTime())
+    .slice(0, 2)
+    .map((departure) => ({
+      time: departure.toISOString(),
+      label: departure.toLocaleTimeString("no-NO", { hour: "2-digit", minute: "2-digit" })
+    }));
 
   const minutesUntilDeparture = Math.floor((reachable.getTime() - now.getTime()) / 60_000);
   const quayWaitMinutes = Math.max(0, minutesUntilDeparture - drive.normalMinutes);
@@ -541,6 +549,7 @@ function buildDecision(route, drive, enturSchedule = {}, now = new Date(), desti
     sideName: route.sideName,
     departureTime: reachable.toISOString(),
     departureLabel: reachable.toLocaleTimeString("no-NO", { hour: "2-digit", minute: "2-digit" }),
+    upcomingDepartures,
     minutesUntilDeparture,
     quayWaitMinutes,
     crossingMinutes,
@@ -667,7 +676,7 @@ function buildNearestCandidates(sourceRoutes, origin) {
       arrivalDistanceKm: null,
       destinationGainKm: null,
       totalRouteKm: null,
-      ferryLegLabel: null,
+      ferryLegLabel: `${terminal.sideName}-${terminal.oppositeSideName}`,
       relevanceScore: departureDistanceKm
     };
     const current = byRoute.get(candidate.routeId);

@@ -3,9 +3,13 @@ const state = {
   selectedTerminalId: null,
   travelMode: "vehicle",
   language: localStorage.getItem("ferge-na-language") || "no",
+  isLocating: false,
   destination: null,
   destinationSearchTimer: null,
   routes: [],
+  lastDecision: null,
+  pullStartY: null,
+  pullHandled: false,
   map: {
     points: [],
     path: [],
@@ -18,7 +22,8 @@ const state = {
   }
 };
 
-const APP_VERSION = "v43";
+const APP_VERSION = "v45";
+const LAST_ROUTE_KEY = "ferge-na-last-route";
 const API_BASE =
   window.location.hostname === "localhost" && window.location.port === "3000"
     ? "http://localhost:3002"
@@ -31,6 +36,7 @@ const TRANSLATIONS = {
     locating: "Henter posisjon",
     positionActive: "Posisjon aktiv",
     refresh: "Oppdater",
+    resetLocation: "Reset lokasjon",
     updating: "Oppdaterer",
     finalDestination: "Endelig destinasjon",
     destinationPlaceholder: "Skriv sted, adresse eller kai",
@@ -39,6 +45,8 @@ const TRANSLATIONS = {
     quayWait: "Ventetid ved kai",
     showMap: "Vis kart",
     closeMap: "Lukk kart",
+    downloadWidget: "Last ned widget",
+    clearDestination: "Tøm destinasjon",
     crossing: "Overfart",
     onwardFromQuay: "Videre fra kai",
     toDestination: "Til destinasjon",
@@ -91,6 +99,7 @@ const TRANSLATIONS = {
     locating: "Getting location",
     positionActive: "Location active",
     refresh: "Refresh",
+    resetLocation: "Reset location",
     updating: "Updating",
     finalDestination: "Final destination",
     destinationPlaceholder: "Type place, address or quay",
@@ -99,6 +108,8 @@ const TRANSLATIONS = {
     quayWait: "Wait at quay",
     showMap: "Show map",
     closeMap: "Close map",
+    downloadWidget: "Download widget",
+    clearDestination: "Clear destination",
     crossing: "Crossing",
     onwardFromQuay: "After quay",
     toDestination: "To destination",
@@ -151,6 +162,7 @@ const TRANSLATIONS = {
     locating: "Position wird ermittelt",
     positionActive: "Position aktiv",
     refresh: "Aktualisieren",
+    resetLocation: "Position zurücksetzen",
     updating: "Aktualisiert",
     finalDestination: "Endziel",
     destinationPlaceholder: "Ort, Adresse oder Kai eingeben",
@@ -159,6 +171,8 @@ const TRANSLATIONS = {
     quayWait: "Wartezeit am Kai",
     showMap: "Karte anzeigen",
     closeMap: "Karte schließen",
+    downloadWidget: "Widget herunterladen",
+    clearDestination: "Ziel leeren",
     crossing: "Überfahrt",
     onwardFromQuay: "Weiter ab Kai",
     toDestination: "Zum Ziel",
@@ -211,6 +225,7 @@ const TRANSLATIONS = {
     locating: "Obteniendo ubicación",
     positionActive: "Ubicación activa",
     refresh: "Actualizar",
+    resetLocation: "Restablecer ubicación",
     updating: "Actualizando",
     finalDestination: "Destino final",
     destinationPlaceholder: "Escribe lugar, dirección o muelle",
@@ -219,6 +234,8 @@ const TRANSLATIONS = {
     quayWait: "Espera en el muelle",
     showMap: "Ver mapa",
     closeMap: "Cerrar mapa",
+    downloadWidget: "Descargar widget",
+    clearDestination: "Borrar destino",
     crossing: "Travesía",
     onwardFromQuay: "Después del muelle",
     toDestination: "Al destino",
@@ -271,6 +288,7 @@ const TRANSLATIONS = {
     locating: "Position en cours",
     positionActive: "Position active",
     refresh: "Actualiser",
+    resetLocation: "Réinitialiser la position",
     updating: "Mise à jour",
     finalDestination: "Destination finale",
     destinationPlaceholder: "Saisir lieu, adresse ou quai",
@@ -279,6 +297,8 @@ const TRANSLATIONS = {
     quayWait: "Attente au quai",
     showMap: "Afficher la carte",
     closeMap: "Fermer la carte",
+    downloadWidget: "Télécharger le widget",
+    clearDestination: "Effacer la destination",
     crossing: "Traversée",
     onwardFromQuay: "Après le quai",
     toDestination: "Vers destination",
@@ -331,6 +351,7 @@ const TRANSLATIONS = {
     locating: "Rilevamento posizione",
     positionActive: "Posizione attiva",
     refresh: "Aggiorna",
+    resetLocation: "Reimposta posizione",
     updating: "Aggiornamento",
     finalDestination: "Destinazione finale",
     destinationPlaceholder: "Scrivi luogo, indirizzo o molo",
@@ -339,6 +360,8 @@ const TRANSLATIONS = {
     quayWait: "Attesa al molo",
     showMap: "Mostra mappa",
     closeMap: "Chiudi mappa",
+    downloadWidget: "Scarica widget",
+    clearDestination: "Cancella destinazione",
     crossing: "Traversata",
     onwardFromQuay: "Dopo il molo",
     toDestination: "Alla destinazione",
@@ -392,75 +415,85 @@ const ARIA_TRANSLATIONS = {
     languageChoice: "Velg språk",
     openMain: "Åpne hovedside",
     status: "Status",
+    resetLocation: "Reset lokasjon",
     start: "Start",
     travelOnward: "Reise videre",
     alerts: "Varsler",
     map: "Kart",
     routeMap: "Kart over valgt rute",
-    zoom: "Zoom"
+    zoom: "Zoom",
+    clearDestination: "Tøm destinasjon"
   },
   en: {
     languageChoice: "Choose language",
     openMain: "Open main page",
     status: "Status",
+    resetLocation: "Reset location",
     start: "Start",
     travelOnward: "Continue journey",
     alerts: "Alerts",
     map: "Map",
     routeMap: "Map of selected route",
-    zoom: "Zoom"
+    zoom: "Zoom",
+    clearDestination: "Clear destination"
   },
   de: {
     languageChoice: "Sprache wählen",
     openMain: "Hauptseite öffnen",
     status: "Status",
+    resetLocation: "Position zurücksetzen",
     start: "Start",
     travelOnward: "Weiterreise",
     alerts: "Hinweise",
     map: "Karte",
     routeMap: "Karte der gewählten Route",
-    zoom: "Zoom"
+    zoom: "Zoom",
+    clearDestination: "Ziel leeren"
   },
   es: {
     languageChoice: "Elegir idioma",
     openMain: "Abrir página principal",
     status: "Estado",
+    resetLocation: "Restablecer ubicación",
     start: "Inicio",
     travelOnward: "Continuar viaje",
     alerts: "Avisos",
     map: "Mapa",
     routeMap: "Mapa de la ruta elegida",
-    zoom: "Zoom"
+    zoom: "Zoom",
+    clearDestination: "Borrar destino"
   },
   fr: {
     languageChoice: "Choisir la langue",
     openMain: "Ouvrir la page principale",
     status: "Statut",
+    resetLocation: "Réinitialiser la position",
     start: "Départ",
     travelOnward: "Suite du trajet",
     alerts: "Alertes",
     map: "Carte",
     routeMap: "Carte de l’itinéraire choisi",
-    zoom: "Zoom"
+    zoom: "Zoom",
+    clearDestination: "Effacer la destination"
   },
   it: {
     languageChoice: "Scegli lingua",
     openMain: "Apri pagina principale",
     status: "Stato",
+    resetLocation: "Reimposta posizione",
     start: "Avvio",
     travelOnward: "Proseguimento",
     alerts: "Avvisi",
     map: "Mappa",
     routeMap: "Mappa del percorso scelto",
-    zoom: "Zoom"
+    zoom: "Zoom",
+    clearDestination: "Cancella destinazione"
   }
 };
 
 const elements = {
-  frontPage: document.querySelector("#frontPage"),
   appShell: document.querySelector("#appShell"),
-  enterAppButton: document.querySelector("#enterAppButton"),
-  languageButtons: [...document.querySelectorAll(".language-option")],
+  languageButtons: [...document.querySelectorAll("[data-language]")],
   locateButton: document.querySelector("#locateButton"),
   refreshButton: document.querySelector("#refreshButton"),
   statusPill: document.querySelector("#statusPill"),
@@ -476,6 +509,7 @@ const elements = {
   totalMetric: document.querySelector("#totalMetric"),
   totalTime: document.querySelector("#totalTime"),
   destinationInput: document.querySelector("#destinationInput"),
+  clearDestinationButton: document.querySelector("#clearDestinationButton"),
   destinationSuggestions: document.querySelector("#destinationSuggestions"),
   noticeStack: document.querySelector("#noticeStack"),
   routeList: document.querySelector("#routeList"),
@@ -487,25 +521,30 @@ const elements = {
   mapTitle: document.querySelector("#mapTitle"),
   closeMapButton: document.querySelector("#closeMapButton"),
   zoomInButton: document.querySelector("#zoomInButton"),
-  zoomOutButton: document.querySelector("#zoomOutButton")
+  zoomOutButton: document.querySelector("#zoomOutButton"),
+  widgetButton: document.querySelector("#widgetButton")
 };
 
 elements.languageButtons.forEach((button) => {
   button.addEventListener("click", () => setLanguage(button.dataset.language || "no"));
 });
-elements.enterAppButton.addEventListener("click", enterApp);
 elements.locateButton.addEventListener("click", locate);
-elements.refreshButton.addEventListener("click", refresh);
+elements.refreshButton.addEventListener("click", resetLocation);
 elements.destinationInput.addEventListener("input", handleDestinationInput);
 elements.destinationInput.addEventListener("focus", handleDestinationInput);
 elements.destinationInput.addEventListener("keydown", handleDestinationKeydown);
+elements.clearDestinationButton.addEventListener("click", clearDestination);
 elements.mapButton.addEventListener("click", showMap);
 elements.closeMapButton.addEventListener("click", closeMap);
 elements.zoomInButton.addEventListener("click", () => zoomMap(1));
 elements.zoomOutButton.addEventListener("click", () => zoomMap(-1));
+elements.widgetButton.addEventListener("click", downloadWidget);
 window.addEventListener("resize", () => {
   if (!elements.mapSheet.hidden) renderMap();
 });
+window.addEventListener("touchstart", handlePullStart, { passive: true });
+window.addEventListener("touchmove", handlePullMove, { passive: true });
+window.addEventListener("touchend", handlePullEnd, { passive: true });
 document.addEventListener("pointerdown", closeSuggestionsOnOutsideClick);
 
 disableServiceWorkerCache();
@@ -516,6 +555,7 @@ function initialize() {
   setLanguage(state.language, { persist: false });
   seedDemo();
   renderRouteLoading();
+  locate();
 }
 
 function t(key, ...args) {
@@ -537,6 +577,8 @@ function setLanguage(language, options = {}) {
     button.setAttribute("aria-pressed", active ? "true" : "false");
   });
   applyTranslations();
+  renderLocationButton();
+  updateDestinationClearButton();
   renderRoutes();
 }
 
@@ -557,20 +599,25 @@ function applyTranslations() {
   }
 }
 
-async function enterApp() {
-  elements.frontPage.hidden = true;
-  elements.appShell.hidden = false;
-  await locate();
+function renderLocationButton() {
+  if (state.isLocating) {
+    elements.locateButton.disabled = true;
+    elements.locateButton.textContent = t("locating");
+    return;
+  }
+  elements.locateButton.disabled = false;
+  elements.locateButton.textContent = state.position ? t("positionActive") : t("usePosition");
 }
 
 async function locate() {
   setLoading(t("locating"));
-  elements.locateButton.disabled = true;
-  elements.locateButton.textContent = t("locating");
+  state.isLocating = true;
+  renderLocationButton();
 
   if (!navigator.geolocation) {
     await setDemoPosition(t("noGeolocationDemo"));
-    elements.locateButton.disabled = false;
+    state.isLocating = false;
+    renderLocationButton();
     return;
   }
 
@@ -580,14 +627,14 @@ async function locate() {
         lat: position.coords.latitude,
         lon: position.coords.longitude
       };
-      elements.locateButton.textContent = t("positionActive");
-      elements.locateButton.disabled = false;
+      state.isLocating = false;
+      renderLocationButton();
       await refresh();
     },
     async () => {
       await setDemoPosition(t("locationFailedDemo"));
-      elements.locateButton.textContent = t("usePosition");
-      elements.locateButton.disabled = false;
+      state.isLocating = false;
+      renderLocationButton();
     },
     { enableHighAccuracy: true, timeout: 8000, maximumAge: 15000 }
   );
@@ -595,8 +642,62 @@ async function locate() {
 
 async function setDemoPosition(message) {
   state.position = { lat: 60.1838, lon: 5.4659 };
+  renderLocationButton();
   elements.recommendation.textContent = message;
   await refresh();
+}
+
+function resetLocation() {
+  state.position = null;
+  state.selectedTerminalId = null;
+  state.routes = [];
+  state.lastDecision = null;
+  state.isLocating = false;
+  stopMapTracking();
+  closeMap();
+  renderLocationButton();
+  elements.routeListTitle.textContent = t("routeListNearest");
+  renderRoutes(t("sharePosition"));
+  clearDecision(t("sharePosition"));
+  renderAlerts([]);
+  elements.updatedAt.textContent = "--:--";
+  elements.sourceLabel.textContent = `Demo · ${APP_VERSION}`;
+}
+
+async function resetContentToNearest() {
+  state.destination = null;
+  state.selectedTerminalId = null;
+  state.lastDecision = null;
+  elements.destinationInput.value = "";
+  updateDestinationClearButton();
+  renderDestinationSuggestions([]);
+  renderDestinationMetrics(null);
+  localStorage.removeItem(LAST_ROUTE_KEY);
+  if (state.position) {
+    await refresh();
+  } else {
+    resetLocation();
+  }
+}
+
+function handlePullStart(event) {
+  if (window.scrollY > 0 || elements.mapSheet.hidden === false) return;
+  state.pullStartY = event.touches?.[0]?.clientY ?? null;
+  state.pullHandled = false;
+}
+
+function handlePullMove(event) {
+  if (state.pullStartY === null || state.pullHandled) return;
+  const y = event.touches?.[0]?.clientY ?? state.pullStartY;
+  if (y - state.pullStartY > 76) {
+    state.pullHandled = true;
+    resetContentToNearest();
+  }
+}
+
+function handlePullEnd() {
+  state.pullStartY = null;
+  state.pullHandled = false;
 }
 
 async function refresh() {
@@ -618,6 +719,7 @@ async function refresh() {
     if (state.selectedTerminalId && !state.routes.some((route) => route.id === state.selectedTerminalId)) {
       state.selectedTerminalId = null;
     }
+    if (!state.selectedTerminalId) restoreLastSelectedRoute();
 
     renderRoutes();
     if (!state.routes.length) {
@@ -712,6 +814,7 @@ async function updateDecision() {
   const payload = await fetchJson(`/api/decision?${query}`);
   const decision = payload.decision;
   if (!decision) return;
+  state.lastDecision = decision;
 
   elements.statusPill.textContent = formatDecisionStatus(decision);
   elements.statusPill.className = `status-pill ${decision.confidence}`;
@@ -719,7 +822,7 @@ async function updateDecision() {
     hour: "2-digit",
     minute: "2-digit"
   });
-  elements.departureTime.textContent = decision.departureLabel;
+  renderDepartureTimes(decision);
   elements.normalDriveTime.textContent = formatMinutes(decision.drive.normalMinutes);
   elements.margin.textContent = formatMinutes(decision.quayWaitMinutes);
   elements.routeName.textContent = `${decision.sideName} ferjekai`;
@@ -727,6 +830,7 @@ async function updateDecision() {
   elements.crossingTime.textContent = formatMinutes(decision.crossingMinutes);
   renderDestinationMetrics(decision.destinationSummary);
   showMapButton();
+  showWidgetButton();
 
   maybeNotify(decision);
 }
@@ -766,6 +870,16 @@ function renderDestinationMetrics(summary) {
   elements.totalTime.textContent = hasSummary ? formatMinutes(summary.totalNormalMinutes) : "--";
 }
 
+function renderDepartureTimes(decision) {
+  const departures = decision.upcomingDepartures?.length
+    ? decision.upcomingDepartures
+    : [{ label: decision.departureLabel }];
+  elements.departureTime.innerHTML = departures
+    .slice(0, 2)
+    .map((departure, index) => `<span>${index + 1}. ${escapeHtml(departure.label)}</span>`)
+    .join("");
+}
+
 function formatMinutes(value) {
   if (!Number.isFinite(value)) return "--";
   const minutes = Math.max(0, Math.round(value));
@@ -796,8 +910,13 @@ function showMapButton() {
   elements.mapButton.hidden = !getSelectedRoute();
 }
 
+function showWidgetButton() {
+  elements.widgetButton.hidden = !getSelectedRoute();
+}
+
 function hideMapButton() {
   elements.mapButton.hidden = true;
+  elements.widgetButton.hidden = true;
   closeMap();
 }
 
@@ -1129,6 +1248,7 @@ function renderRoutes(errorMessage = "") {
     button.addEventListener("click", async () => {
       renderDestinationSuggestions([]);
       state.selectedTerminalId = route.id;
+      rememberSelectedRoute(route);
       renderRoutes();
       await updateDecisionSafe();
       await updateAlertsSafe();
@@ -1150,14 +1270,34 @@ function getSelectedRoute() {
   return state.routes.find((route) => route.id === state.selectedTerminalId) || null;
 }
 
+function rememberSelectedRoute(route) {
+  localStorage.setItem(LAST_ROUTE_KEY, JSON.stringify({
+    routeId: route.routeId,
+    terminalId: route.id
+  }));
+}
+
+function restoreLastSelectedRoute() {
+  let saved = null;
+  try {
+    saved = JSON.parse(localStorage.getItem(LAST_ROUTE_KEY) || "null");
+  } catch {
+    saved = null;
+  }
+  if (!saved?.routeId) return;
+  const route = state.routes.find((candidate) => candidate.routeId === saved.routeId);
+  if (route) state.selectedTerminalId = route.id;
+}
+
 function formatRouteDescriptor(route) {
   const type = route.transportSubmode === "localCarFerry" ? t("carFerry") : t("fastBoat");
   return route.routeCode ? `${type} ${route.routeCode}` : type;
 }
 
 function formatRouteTitle(route, index) {
-  if (!state.destination) return `${route.sideName} ferjekai`;
-  return `${t("ferryOrdinal", index)}: ${route.ferryLegLabel || `${route.sideName}-${route.oppositeSideName}`}`;
+  const legLabel = route.ferryLegLabel || `${route.sideName}-${route.oppositeSideName}`;
+  if (!state.destination) return legLabel;
+  return `${t("ferryOrdinal", index)}: ${legLabel}`;
 }
 
 function formatRouteMeta(route) {
@@ -1171,6 +1311,7 @@ function formatRouteMeta(route) {
 function handleDestinationInput() {
   const text = elements.destinationInput.value.trim();
   window.clearTimeout(state.destinationSearchTimer);
+  updateDestinationClearButton();
 
   if (text.length < 2) {
     state.destination = null;
@@ -1217,6 +1358,7 @@ function renderDestinationSuggestions(places) {
       state.destination = place;
       state.selectedTerminalId = null;
       elements.destinationInput.value = place.label;
+      updateDestinationClearButton();
       renderDestinationSuggestions([]);
       if (state.position) refresh();
     });
@@ -1228,6 +1370,22 @@ function appendDestinationParams(query) {
   if (!state.destination) return;
   query.set("destLat", String(state.destination.lat));
   query.set("destLon", String(state.destination.lon));
+}
+
+function clearDestination() {
+  window.clearTimeout(state.destinationSearchTimer);
+  state.destination = null;
+  state.selectedTerminalId = null;
+  elements.destinationInput.value = "";
+  updateDestinationClearButton();
+  renderDestinationSuggestions([]);
+  renderDestinationMetrics(null);
+  if (state.position) refresh();
+}
+
+function updateDestinationClearButton() {
+  const hasValue = Boolean(elements.destinationInput.value.trim());
+  elements.clearDestinationButton.hidden = !hasValue;
 }
 
 function closeSuggestionsOnOutsideClick(event) {
@@ -1290,6 +1448,43 @@ function maybeNotify(decision) {
       icon: "/icon.svg"
     });
   }
+}
+
+function downloadWidget() {
+  const route = getSelectedRoute();
+  const decision = state.lastDecision;
+  if (!route || !decision) return;
+  const departures = (decision.upcomingDepartures?.length ? decision.upcomingDepartures : [{ label: decision.departureLabel }])
+    .slice(0, 2)
+    .map((departure) => `<li>${escapeHtml(departure.label)}</li>`)
+    .join("");
+  const appUrl = `${window.location.origin}${window.location.pathname}`;
+  const html = `<!doctype html>
+<html lang="${escapeHtml(state.language)}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escapeHtml(formatRouteTitle(route, 0))}</title>
+<style>
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b4f8a;color:white;font-family:Eurostile,Eurostyle,'Microgramma D Extended','Arial Narrow',Arial,sans-serif}
+a{color:inherit;text-decoration:none}
+.w{width:min(360px,calc(100vw - 28px));padding:22px;border:1px solid rgba(255,255,255,.26);border-radius:14px;background:linear-gradient(145deg,#083b75,#2386c8);box-shadow:0 22px 48px rgba(0,20,40,.28)}
+h1{margin:0 0 14px;font-size:1.5rem}
+p{margin:0 0 8px;opacity:.78;font-weight:800}
+ul{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+li{padding:12px;border-radius:10px;background:rgba(255,255,255,.14);font-size:2rem;font-weight:900}
+</style>
+</head>
+<body><a class="w" href="${escapeHtml(appUrl)}"><p>Fergetider</p><h1>${escapeHtml(formatRouteTitle(route, 0))}</h1><ul>${departures}</ul></a></body>
+</html>`;
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "ferge-na-widget.html";
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(link.href);
 }
 
 function escapeHtml(value) {
