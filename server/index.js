@@ -13,6 +13,7 @@ loadEnvFile(join(rootDir, ".env"));
 const PORT = Number(process.env.PORT || 3000);
 const ENTUR_CLIENT_NAME = process.env.ENTUR_CLIENT_NAME || "ferge-na-dev/0.1";
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || "";
+const VEGVESEN_DATEX_AUTH = process.env.VEGVESEN_DATEX_AUTH || process.env.DATEX_AUTH || "";
 const ENTUR_GRAPHQL_URL = "https://api.entur.io/journey-planner/v3/graphql";
 const ENTUR_FERRY_CACHE_TTL_MS = 60 * 60 * 1000;
 
@@ -637,7 +638,7 @@ async function getNearby(req, res, url) {
 
   const sourceRoutes = entur.routes.filter((route) => routeSupportsTravelMode(route, travelMode));
   const candidates = destination
-    ? buildDestinationCandidates(sourceRoutes, origin, destination)
+    ? await buildDestinationCandidates(sourceRoutes, origin, destination, travelMode)
     : buildNearestCandidates(sourceRoutes, origin);
 
   const nearby = candidates
@@ -677,52 +678,171 @@ function buildNearestCandidates(sourceRoutes, origin) {
   return [...byRoute.values()];
 }
 
-function buildDestinationCandidates(sourceRoutes, origin, destination) {
-  const byRoute = new Map();
-  const directKm = distanceKm(origin, destination);
-  const maxCorridorKm = Math.max(12, Math.min(38, directKm * 0.22));
-  const maxFirstDepartureKm = Math.max(30, directKm * 0.65);
+async function buildDestinationCandidates(sourceRoutes, origin, destination, travelMode) {
+  let directDrive = null;
+  let routePath = null;
+  try {
+    directDrive = await getDriveRoute(origin, destination, travelMode);
+  } catch {
+    directDrive = fallbackDrive(origin, destination);
+  }
+  try {
+    routePath = await getRoutePath(origin, destination, travelMode);
+  } catch {
+    routePath = null;
+  }
 
-  for (const departure of sourceRoutes) {
-    const bestArrival = bestArrivalSideMetrics(origin, destination, departure);
-    if (!bestArrival?.quay) continue;
+  if (!routePath?.points?.length || routePath.source === "fallback-straight") return [];
 
-    const departureCorridor = routeCorridorMetrics(origin, destination, departure);
-    const departureDistanceKm = distanceKm(origin, departure);
-    const arrivalDistanceKm = bestArrival.distanceKm;
-    const ferryLegKm = distanceKm(departure, bestArrival.quay);
-    const totalRouteKm = departureDistanceKm + ferryLegKm + arrivalDistanceKm;
-    const currentSideToDestinationKm = distanceKm(departure, destination);
-    const destinationGainKm = currentSideToDestinationKm - arrivalDistanceKm;
-    const progressDelta = bestArrival.progress - routeProgress(origin, destination, departure);
+  return buildRoutePathFerryCandidates(sourceRoutes, routePath.points, directDrive)
+    .sort((a, b) => a.relevanceScore - b.relevanceScore);
+}
 
-    if (destinationGainKm <= 0.5) continue;
-    if (departureCorridor.progress < -0.04 || departureCorridor.progress > 1.05) continue;
-    if (departureCorridor.corridorKm > maxCorridorKm) continue;
-    if (departureDistanceKm > maxFirstDepartureKm) continue;
-    if (progressDelta <= 0.015 && directKm > 15) continue;
-    if (departureDistanceKm > Math.max(35, directKm * 1.35)) continue;
-    if (totalRouteKm > Math.max(20, directKm * 1.75)) continue;
+function buildRoutePathFerryCandidates(sourceRoutes, routePoints, directDrive) {
+  const path = buildPathIndex(routePoints);
+  const routesById = new Map();
+  for (const terminal of sourceRoutes) {
+    if (!routesById.has(terminal.routeId)) routesById.set(terminal.routeId, []);
+    routesById.get(terminal.routeId).push(terminal);
+  }
 
-    const candidate = {
-      ...departure,
-      distanceKm: roundKm(departureDistanceKm),
-      arrivalDistanceKm: roundKm(arrivalDistanceKm),
-      destinationGainKm: roundKm(destinationGainKm),
-      totalRouteKm: roundKm(totalRouteKm),
-      ferryLegKm: roundKm(ferryLegKm),
-      arrivalSideName: stripKaiSuffix(bestArrival.quay.name),
-      arrivalLat: bestArrival.quay.lat,
-      arrivalLon: bestArrival.quay.lon,
-      ferryLegLabel: `${stripKaiSuffix(departure.name)}-${stripKaiSuffix(bestArrival.quay.name)}`,
-      relevanceScore: totalRouteKm + arrivalDistanceKm * 0.25 + departureCorridor.corridorKm * 0.4
-    };
-    const current = byRoute.get(candidate.routeId);
-    if (!current || candidate.relevanceScore < current.relevanceScore) {
-      byRoute.set(candidate.routeId, candidate);
+  const candidates = [];
+  for (const terminals of routesById.values()) {
+    const routeTerminals = terminals
+      .map((terminal) => {
+        const match = nearestPointOnPath(terminal, path);
+        return { terminal, match };
+      })
+      .filter(({ match }) => match && match.distanceKm <= 2.2)
+      .sort((a, b) => a.match.alongKm - b.match.alongKm);
+
+    if (routeTerminals.length < 2) continue;
+
+    for (let i = 0; i < routeTerminals.length - 1; i += 1) {
+      const departure = routeTerminals[i];
+      const arrival = routeTerminals[i + 1];
+      const ferryLegKm = distanceKm(departure.terminal, arrival.terminal);
+      const pathGapKm = arrival.match.alongKm - departure.match.alongKm;
+      if (pathGapKm < 0.4 || ferryLegKm < 0.4) continue;
+      if (pathGapKm > Math.max(24, ferryLegKm * 3.4)) continue;
+
+      candidates.push({
+        ...departure.terminal,
+        distanceKm: roundKm(departure.match.alongKm),
+        arrivalDistanceKm: roundKm(Math.max(0, path.totalKm - arrival.match.alongKm)),
+        destinationGainKm: roundKm(path.totalKm - arrival.match.alongKm),
+        totalRouteKm: roundKm(directDrive?.distanceKm || path.totalKm),
+        ferryLegKm: roundKm(ferryLegKm),
+        arrivalSideName: stripKaiSuffix(arrival.terminal.name),
+        arrivalLat: arrival.terminal.lat,
+        arrivalLon: arrival.terminal.lon,
+        ferryLegLabel: `${stripKaiSuffix(departure.terminal.name)}-${stripKaiSuffix(arrival.terminal.name)}`,
+        directRouteKm: directDrive ? roundKm(directDrive.distanceKm) : roundKm(path.totalKm),
+        directNormalMinutes: directDrive?.normalMinutes || null,
+        relevanceScore: departure.match.alongKm
+      });
+      break;
     }
   }
-  return [...byRoute.values()];
+
+  return candidates;
+}
+
+function buildPathIndex(points) {
+  const normalized = normalizeRoutePath(points);
+  const cumulative = [0];
+  for (let i = 1; i < normalized.length; i += 1) {
+    cumulative[i] = cumulative[i - 1] + distanceKm(normalized[i - 1], normalized[i]);
+  }
+  return {
+    points: normalized,
+    cumulative,
+    totalKm: cumulative[cumulative.length - 1] || 0
+  };
+}
+
+function nearestPointOnPath(point, path) {
+  if (path.points.length < 2) return null;
+  let best = null;
+  for (let i = 0; i < path.points.length - 1; i += 1) {
+    const projected = projectPointToSegment(point, path.points[i], path.points[i + 1]);
+    const segmentKm = distanceKm(path.points[i], path.points[i + 1]);
+    const alongKm = path.cumulative[i] + segmentKm * projected.t;
+    const distanceToSegmentKm = distanceKm(point, projected.point);
+    if (!best || distanceToSegmentKm < best.distanceKm) {
+      best = {
+        distanceKm: distanceToSegmentKm,
+        alongKm,
+        segmentIndex: i
+      };
+    }
+  }
+  return best;
+}
+
+function projectPointToSegment(point, a, b) {
+  const lat0 = toRad((point.lat + a.lat + b.lat) / 3);
+  const p = { x: point.lon * Math.cos(lat0), y: point.lat };
+  const start = { x: a.lon * Math.cos(lat0), y: a.lat };
+  const end = { x: b.lon * Math.cos(lat0), y: b.lat };
+  const vx = end.x - start.x;
+  const vy = end.y - start.y;
+  const wx = p.x - start.x;
+  const wy = p.y - start.y;
+  const lengthSquared = vx * vx + vy * vy;
+  const t = lengthSquared ? Math.max(0, Math.min(1, (wx * vx + wy * vy) / lengthSquared)) : 0;
+  return {
+    t,
+    point: {
+      lat: start.y + vy * t,
+      lon: (start.x + vx * t) / Math.cos(lat0)
+    }
+  };
+}
+
+async function refineDestinationCandidates(candidates, origin, destination, directDrive, travelMode) {
+  const preselected = candidates
+    .sort((a, b) => a.relevanceScore - b.relevanceScore)
+    .slice(0, 18);
+  const refined = [];
+
+  for (const candidate of preselected) {
+    const arrival = candidate.arrivalLat && candidate.arrivalLon
+      ? { lat: candidate.arrivalLat, lon: candidate.arrivalLon }
+      : null;
+    if (!arrival) continue;
+
+    let driveToFerry = null;
+    let onwardDrive = null;
+    try {
+      driveToFerry = await getDriveRoute(origin, candidate, travelMode);
+      onwardDrive = await getDriveRoute(arrival, destination, travelMode);
+    } catch {
+      continue;
+    }
+
+    const crossingMinutes = (routeMeta[candidate.routeId] || {}).crossingMinutes || Math.max(8, Math.round(candidate.ferryLegKm * 4));
+    const totalRouteKm = driveToFerry.distanceKm + candidate.ferryLegKm + onwardDrive.distanceKm;
+    const totalMinutes = driveToFerry.normalMinutes + crossingMinutes + onwardDrive.normalMinutes;
+    const directMinutes = directDrive?.normalMinutes || fallbackDrive(origin, destination).normalMinutes;
+    const directKm = directDrive?.distanceKm || distanceKm(origin, destination);
+
+    if (totalRouteKm > Math.max(directKm + 70, directKm * 1.28)) continue;
+    if (totalMinutes > Math.max(directMinutes + 75, directMinutes * 1.28)) continue;
+
+    refined.push({
+      ...candidate,
+      distanceKm: roundKm(driveToFerry.distanceKm),
+      arrivalDistanceKm: roundKm(onwardDrive.distanceKm),
+      totalRouteKm: roundKm(totalRouteKm),
+      totalNormalMinutes: totalMinutes,
+      directRouteKm: roundKm(directKm),
+      directNormalMinutes: directMinutes,
+      relevanceScore: totalMinutes + candidate.ferryLegKm * 1.5
+    });
+  }
+
+  return refined;
 }
 
 function routeCorridorMetrics(origin, destination, point) {
@@ -891,13 +1011,6 @@ async function getAlerts(_req, res, url) {
         .sort((a, b) => a.distanceKm - b.distanceKm)[0];
 
     if (selected) {
-      if (!GOOGLE_MAPS_API_KEY) {
-        alerts.push({
-          level: "muted",
-          title: "Google trafikk ikke aktivert",
-          detail: "Kjøretid vises som estimat. Legg inn Google Maps API-nøkkel for sanntidstrafikk og saktegående trafikk."
-        });
-      }
       alerts.push(...await getGoogleTrafficAlertsForLeg(origin, selected, "Til fergekaien"));
       alerts.push(...await getRoadMessagesForLeg(origin, selected, "Til fergekaien"));
     }
@@ -909,12 +1022,8 @@ async function getAlerts(_req, res, url) {
         alerts.push(...await getRoadMessagesForLeg(arrivalMetrics.quay, destination, "Fra ankomstkai"));
       }
     }
-  } catch (error) {
-    alerts.push({
-      level: "muted",
-      title: "Vegmeldinger utilgjengelig",
-      detail: "Kunne ikke hente Statens vegvesen sine rutedata for vegarbeid eller kolonnekjøring akkurat nå."
-    });
+  } catch {
+    // Missing external keys or unavailable traffic sources should not be shown to end users.
   }
 
   sendJson(res, 200, { alerts: dedupeAlerts(alerts).slice(0, 4) });
@@ -1015,20 +1124,20 @@ async function getRoadMessagesForLeg(origin, destination, legLabel) {
 }
 
 async function fetchVegvesenRouteMessages(origin, destination) {
-  const from = wgs84ToUtm33(origin.lat, origin.lon);
-  const to = wgs84ToUtm33(destination.lat, destination.lon);
-  const routingUrl = new URL("https://www.vegvesen.no/ws/no/vegvesen/ruteplan/routingService_v1_0/routingService");
-  routingUrl.searchParams.set("format", "json");
-  routingUrl.searchParams.set("lang", "nb-NO");
-  routingUrl.searchParams.set("returnDirections", "true");
-  routingUrl.searchParams.set("returnGeometry", "false");
-  routingUrl.searchParams.set("avoidRoadsTemporaryClosed", "false");
-  routingUrl.searchParams.set("stops", `${from.easting},${from.northing};${to.easting},${to.northing}`);
-
-  const response = await fetch(routingUrl);
-  if (!response.ok) throw new Error(`Vegvesen rute ${response.status}`);
+  if (!VEGVESEN_DATEX_AUTH) return [];
+  const response = await fetch("https://datex-server-get-v3-1.atlas.vegvesen.no/datexapi/GetSituation/pullsnapshotdata", {
+    headers: {
+      authorization: VEGVESEN_DATEX_AUTH,
+      accept: "application/json"
+    }
+  });
+  if (!response.ok) return [];
   const payload = await response.json();
-  return extractRoadMessages(payload).filter(isRelevantRoadMessage).slice(0, 4);
+  const corridor = makeRouteCorridor(origin, destination);
+  return extractRoadMessages(payload)
+    .filter(isRelevantRoadMessage)
+    .filter((message) => !message.position || isNearRouteCorridor(message.position, corridor))
+    .slice(0, 4);
 }
 
 function extractRoadMessages(value, messages = []) {
@@ -1047,12 +1156,38 @@ function extractRoadMessages(value, messages = []) {
     messages.push({
       level: /kolonnekj|stengt|closed|vegarbeid|roadwork/i.test(`${type} ${ingress}`) ? "warning" : "info",
       title: normalizeName(String(heading)).slice(0, 90),
-      detail: normalizeName(String(ingress)).slice(0, 180)
+      detail: normalizeName(String(ingress)).slice(0, 180),
+      position: extractMessagePosition(value)
     });
   }
 
   for (const item of Object.values(value)) extractRoadMessages(item, messages);
   return messages;
+}
+
+function extractMessagePosition(value) {
+  const text = JSON.stringify(value);
+  const latMatch = text.match(/"latitude"\s*:\s*"?(-?\d+(?:\.\d+)?)"?/i);
+  const lonMatch = text.match(/"longitude"\s*:\s*"?(-?\d+(?:\.\d+)?)"?/i);
+  const lat = latMatch ? Number(latMatch[1]) : null;
+  const lon = lonMatch ? Number(lonMatch[1]) : null;
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  return { lat, lon };
+}
+
+function makeRouteCorridor(origin, destination) {
+  return {
+    origin,
+    destination,
+    directKm: distanceKm(origin, destination),
+    maxDistanceKm: Math.max(12, Math.min(45, distanceKm(origin, destination) * 0.12))
+  };
+}
+
+function isNearRouteCorridor(point, corridor) {
+  const progress = routeProgress(corridor.origin, corridor.destination, point);
+  if (progress < -0.05 || progress > 1.05) return false;
+  return routeCorridorMetrics(corridor.origin, corridor.destination, point).corridorKm <= corridor.maxDistanceKm;
 }
 
 function collectAttributeValues(value, result = {}) {
